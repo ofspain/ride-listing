@@ -10,17 +10,18 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface UserMapper {
 
-    @Mapping(target = "id", ignore = true)
     @Mapping(target = "password", ignore = true)
     @Mapping(target = "profileImageUrl", ignore = true)
     @Mapping(target = "role", ignore = true)
     @Mapping(target = "enabled", ignore = true)
     @Mapping(target = "listings", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "updatedAt", ignore = true)
+//    @Mapping(target = "createdAt", ignore = true)
+//    @Mapping(target = "updatedAt", ignore = true)
     User toEntity(RegisterRequest request);
 
     UserResponse toResponse(User user);
 
     UserSummaryResponse toSummaryResponse(User user);
 }
+
+//todo: [20,10] Unmapped target properties: "state, accountType, favorites".

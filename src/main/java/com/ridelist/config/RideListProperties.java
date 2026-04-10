@@ -13,6 +13,7 @@ import java.util.List;
 @Setter
 public class RideListProperties {
 
+    private int minCount = 1;
     private int maxCount = 10;
     private List<String> allowedTypes;
     private int maxSizeMb = 5;

@@ -30,6 +30,13 @@ public class User extends BaseEntity {
     @Column(name = "phone_number")
     private String phoneNumber;
 
+    private String state;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_type", nullable = false)
+    @Builder.Default
+    private AccountType accountType = AccountType.INDIVIDUAL;
+
     @Column(name = "profile_image_url")
     private String profileImageUrl;
 
@@ -45,6 +52,10 @@ public class User extends BaseEntity {
     @OneToMany(mappedBy = "seller", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Listing> listings = new ArrayList<>();
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<Favorite> favorites = new ArrayList<>();
 
     public String getFullName() {
         return firstName + " " + lastName;

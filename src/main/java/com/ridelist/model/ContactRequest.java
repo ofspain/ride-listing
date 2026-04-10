@@ -17,8 +17,14 @@ public class ContactRequest extends BaseEntity {
     private Listing listing;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "buyer_id", nullable = false)
+    @JoinColumn(name = "buyer_id")
     private User buyer;
+
+    @Column(name = "sender_name")
+    private String senderName;
+
+    @Column(name = "sender_phone")
+    private String senderPhone;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String message;

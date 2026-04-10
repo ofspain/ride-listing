@@ -2,7 +2,7 @@ package com.ridelist.dto.request;
 
 import com.ridelist.model.ListingCategory;
 import com.ridelist.model.ListingCondition;
-import com.ridelist.model.ListingStatus;
+import com.ridelist.model.VehicleType;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -26,19 +26,25 @@ public class UpdateListingRequest {
     @DecimalMin(value = "0.01", message = "Price must be greater than 0")
     private BigDecimal price;
 
+    private String state;
+
     private ListingCategory category;
 
     private ListingCondition condition;
 
-    private ListingStatus status;
-
-    private String brand;
-
+    // Vehicle-specific fields
+    private VehicleType vehicleType;
+    private String make;
     private String model;
 
     @Min(value = 1900, message = "Invalid year")
     @Max(value = 2100, message = "Invalid year")
     private Integer year;
+
+    // Part-specific fields
+    private String partName;
+    private String partCategory;
+    private String compatibility;
 
     private String location;
 }

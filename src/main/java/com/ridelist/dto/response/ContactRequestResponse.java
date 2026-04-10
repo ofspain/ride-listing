@@ -18,6 +18,8 @@ public class ContactRequestResponse {
     private UUID id;
     private ListingSummaryResponse listing;
     private UserSummaryResponse buyer;
+    private String senderName;
+    private String senderPhone;
     private String message;
     private ContactStatus status;
     private String sellerResponse;

@@ -16,6 +16,10 @@ import java.util.List;
 @Builder
 public class Listing extends BaseEntity {
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "listing_type", nullable = false)
+    private ListingType listingType;
+
     @Column(nullable = false)
     private String title;
 
@@ -24,6 +28,8 @@ public class Listing extends BaseEntity {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
+
+    private String state;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -39,11 +45,26 @@ public class Listing extends BaseEntity {
     @Builder.Default
     private ListingStatus status = ListingStatus.DRAFT;
 
-    private String brand;
+    // Vehicle-specific fields
+    @Enumerated(EnumType.STRING)
+    @Column(name = "vehicle_type")
+    private VehicleType vehicleType;
+
+    private String make;
 
     private String model;
 
     private Integer year;
+
+    // Part-specific fields
+    @Column(name = "part_name")
+    private String partName;
+
+    @Column(name = "part_category")
+    private String partCategory;
+
+    @Column(columnDefinition = "TEXT")
+    private String compatibility;
 
     private String location;
 

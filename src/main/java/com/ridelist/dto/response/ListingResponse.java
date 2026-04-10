@@ -1,8 +1,6 @@
 package com.ridelist.dto.response;
 
-import com.ridelist.model.ListingCategory;
-import com.ridelist.model.ListingCondition;
-import com.ridelist.model.ListingStatus;
+import com.ridelist.model.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,15 +18,26 @@ import java.util.UUID;
 public class ListingResponse {
 
     private UUID id;
+    private ListingType listingType;
     private String title;
     private String description;
     private BigDecimal price;
+    private String state;
     private ListingCategory category;
     private ListingCondition condition;
     private ListingStatus status;
-    private String brand;
+
+    // Vehicle-specific fields
+    private VehicleType vehicleType;
+    private String make;
     private String model;
     private Integer year;
+
+    // Part-specific fields
+    private String partName;
+    private String partCategory;
+    private String compatibility;
+
     private String location;
     private Long viewCount;
     private UserSummaryResponse seller;
