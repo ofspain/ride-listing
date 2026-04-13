@@ -42,6 +42,14 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ex.getMessage()));
     }
 
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDuplicateResource(DuplicateResourceException ex) {
+        log.warn("Duplicate resource: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException ex) {
         log.warn("Bad credentials: {}", ex.getMessage());

@@ -3,13 +3,16 @@ package com.ridelist.dto.request;
 import com.ridelist.model.ListingCategory;
 import com.ridelist.model.ListingCondition;
 import com.ridelist.model.VehicleType;
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.UUID;
 
 @Data
 @Builder
@@ -26,7 +29,14 @@ public class UpdateListingRequest {
     @DecimalMin(value = "0.01", message = "Price must be greater than 0")
     private BigDecimal price;
 
-    private String state;
+    private UUID stateId;
+
+    private UUID axisId;
+
+    private UUID areaId;
+
+    @Size(max = 500, message = "Address line must not exceed 500 characters")
+    private String addressLine;
 
     private ListingCategory category;
 
@@ -34,12 +44,9 @@ public class UpdateListingRequest {
 
     // Vehicle-specific fields
     private VehicleType vehicleType;
-    private String make;
-    private String model;
-
-    @Min(value = 1900, message = "Invalid year")
-    @Max(value = 2100, message = "Invalid year")
-    private Integer year;
+    private UUID makeId;
+    private UUID vehicleModelId;
+    private UUID modelYearId;
 
     // Part-specific fields
     private String partName;
@@ -47,4 +54,7 @@ public class UpdateListingRequest {
     private String compatibility;
 
     private String location;
+
+    // Dynamic attributes
+    private List<AttributeValueRequest> attributes;
 }

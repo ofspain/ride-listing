@@ -20,11 +20,18 @@ public class ListingSummaryResponse {
     private ListingType listingType;
     private String title;
     private BigDecimal price;
-    private String state;
+
+    // Location hierarchy
+    private StateResponse state;
+    private AxisResponse axis;
+    private AreaResponse area;
+
     private ListingCategory category;
     private ListingCondition condition;
     private ListingStatus status;
     private VehicleType vehicleType;
+    private MakeResponse make;
+    private VehicleModelResponse vehicleModel;
     private String location;
     private String primaryImageUrl;
     private LocalDateTime createdAt;

@@ -24,8 +24,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -37,19 +41,38 @@ public class ListingController {
 
     // ==================== PUBLIC ENDPOINTS ====================
 
+    private static final String ATTRIBUTE_FILTER_PREFIX = "attr_";
+
     @GetMapping("/api/v1/listings")
     public ResponseEntity<ApiResponse<PagedResponse<ListingSummaryResponse>>> getListings(
             @RequestParam(required = false) ListingType listingType,
             @RequestParam(required = false) VehicleType vehicleType,
-            @RequestParam(required = false) String state,
+            @RequestParam(required = false) UUID stateId,
+            @RequestParam(required = false) UUID axisId,
+            @RequestParam(required = false) UUID areaId,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            HttpServletRequest request) {
+
+        // Extract attribute filters from query params (e.g., attr_engine-type=150cc)
+        Map<String, String> attributeFilters = extractAttributeFilters(request);
 
         PagedResponse<ListingSummaryResponse> response = listingService.getListings(
-                listingType, vehicleType, state, minPrice, maxPrice, pageable);
+                listingType, vehicleType, stateId, axisId, areaId, minPrice, maxPrice, attributeFilters, pageable);
 
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    private Map<String, String> extractAttributeFilters(HttpServletRequest request) {
+        Map<String, String> attributeFilters = new HashMap<>();
+        request.getParameterMap().forEach((key, values) -> {
+            if (key.startsWith(ATTRIBUTE_FILTER_PREFIX) && values.length > 0) {
+                String attributeSlug = key.substring(ATTRIBUTE_FILTER_PREFIX.length());
+                attributeFilters.put(attributeSlug, values[0]);
+            }
+        });
+        return attributeFilters;
     }
 
     @GetMapping("/api/v1/listings/{id}")

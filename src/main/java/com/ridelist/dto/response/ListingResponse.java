@@ -22,16 +22,22 @@ public class ListingResponse {
     private String title;
     private String description;
     private BigDecimal price;
-    private String state;
+
+    // Location hierarchy
+    private StateResponse state;
+    private AxisResponse axis;
+    private AreaResponse area;
+    private String addressLine;
+
     private ListingCategory category;
     private ListingCondition condition;
     private ListingStatus status;
 
     // Vehicle-specific fields
     private VehicleType vehicleType;
-    private String make;
-    private String model;
-    private Integer year;
+    private MakeResponse make;
+    private VehicleModelResponse vehicleModel;
+    private ModelYearResponse modelYear;
 
     // Part-specific fields
     private String partName;
@@ -42,6 +48,7 @@ public class ListingResponse {
     private Long viewCount;
     private UserSummaryResponse seller;
     private List<ListingImageResponse> images;
+    private List<AttributeValueResponse> attributes;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

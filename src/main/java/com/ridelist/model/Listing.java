@@ -8,7 +8,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "listings")
+@Table(name = "listings", indexes = {
+        @Index(name = "idx_listing_state_id", columnList = "state_id"),
+        @Index(name = "idx_listing_axis_id", columnList = "axis_id"),
+        @Index(name = "idx_listing_area_id", columnList = "area_id"),
+        @Index(name = "idx_listing_make_id", columnList = "make_id"),
+        @Index(name = "idx_listing_vehicle_model_id", columnList = "vehicle_model_id"),
+        @Index(name = "idx_listing_model_year_id", columnList = "model_year_id")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -29,7 +36,20 @@ public class Listing extends BaseEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
 
-    private String state;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "state_id")
+    private State state;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "axis_id")
+    private Axis axis;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "area_id")
+    private Area area;
+
+    @Column(name = "address_line")
+    private String addressLine;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -50,11 +70,17 @@ public class Listing extends BaseEntity {
     @Column(name = "vehicle_type")
     private VehicleType vehicleType;
 
-    private String make;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "make_id")
+    private Make make;
 
-    private String model;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "vehicle_model_id")
+    private VehicleModel vehicleModel;
 
-    private Integer year;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "model_year_id")
+    private ModelYear modelYear;
 
     // Part-specific fields
     @Column(name = "part_name")
@@ -76,6 +102,10 @@ public class Listing extends BaseEntity {
     @Builder.Default
     @OrderBy("displayOrder ASC")
     private List<ListingImage> images = new ArrayList<>();
+
+    @OneToMany(mappedBy = "listing", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ListingAttributeValue> attributes = new ArrayList<>();
 
     @Column(name = "view_count")
     @Builder.Default
