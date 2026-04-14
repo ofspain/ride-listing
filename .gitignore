@@ -1,0 +1,44 @@
+# Build output
+target/
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# IDE - Eclipse
+.classpath
+.project
+.settings/
+
+# IDE - VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.swp
+*.bak
+bash.exe.stackdump
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Maven wrapper (if not committed)
+!.mvn/wrapper/maven-wrapper.jar
+
+# Test output
+*.exec
+
+# exclude prompts
+prompt.md
