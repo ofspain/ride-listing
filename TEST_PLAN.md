@@ -45,24 +45,36 @@ This document outlines the integration test strategy for RideList MVP - a market
         <scope>test</scope>
     </dependency>
     
-    <!-- Testcontainers -->
+    <!-- Testcontainers (2.x core for Docker socket compatibility, 1.x modules) -->
     <dependency>
         <groupId>org.testcontainers</groupId>
         <artifactId>testcontainers</artifactId>
-        <version>1.19.7</version>
+        <version>2.0.4</version>
         <scope>test</scope>
     </dependency>
     <dependency>
         <groupId>org.testcontainers</groupId>
         <artifactId>postgresql</artifactId>
-        <version>1.19.7</version>
+        <version>1.21.4</version>
         <scope>test</scope>
+        <exclusions>
+            <exclusion>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers</artifactId>
+            </exclusion>
+        </exclusions>
     </dependency>
     <dependency>
         <groupId>org.testcontainers</groupId>
         <artifactId>junit-jupiter</artifactId>
-        <version>1.19.7</version>
+        <version>1.21.4</version>
         <scope>test</scope>
+        <exclusions>
+            <exclusion>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers</artifactId>
+            </exclusion>
+        </exclusions>
     </dependency>
     
     <!-- Security Test -->
@@ -74,14 +86,13 @@ This document outlines the integration test strategy for RideList MVP - a market
 </dependencies>
 ```
 
+**Note:** We use testcontainers 2.x core for better Docker socket compatibility on Windows (npipe), while the postgresql and junit-jupiter modules remain at 1.x with exclusions to avoid version conflicts.
+
 ### 2.3 Test Configuration (application-test.properties)
 
 ```properties
-# Database - Testcontainers PostgreSQL
-spring.datasource.url=jdbc:tc:postgresql:15:///ridelist_test
-spring.datasource.driver-class-name=org.testcontainers.jdbc.ContainerDatabaseDriver
-spring.datasource.username=test
-spring.datasource.password=test
+# Database - Testcontainers PostgreSQL (properties overridden by @DynamicPropertySource in BaseIntegrationTest)
+spring.datasource.driver-class-name=org.postgresql.Driver
 
 # JPA / Hibernate
 spring.jpa.hibernate.ddl-auto=none
@@ -114,19 +125,21 @@ logging.level.org.testcontainers=INFO
 logging.level.com.ridelist=DEBUG
 ```
 
+**Note:** Database URL, username, and password are dynamically injected by `@DynamicPropertySource` in `BaseIntegrationTest` using the Testcontainers PostgreSQL container. We use the standard PostgreSQL driver (`org.postgresql.Driver`) instead of `ContainerDatabaseDriver` because the JDBC URL is a standard PostgreSQL URL provided by the container.
+
 ### 2.4 Base Test Class
 
 ```java
-package com.ridelist;
+package com.ridelist.integration;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ridelist.dto.request.LoginRequest;
 import com.ridelist.dto.request.RegisterRequest;
+import com.ridelist.dto.response.ApiResponse;
 import com.ridelist.dto.response.AuthResponse;
 import com.ridelist.model.*;
-import com.ridelist.model.enums.*;
 import com.ridelist.repository.*;
-import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -142,7 +155,6 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -153,6 +165,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @Transactional
 public abstract class BaseIntegrationTest {
+
+    // Windows Docker Desktop: Configure npipe socket for Testcontainers
+    static {
+        System.setProperty("docker.host", "npipe:////./pipe/docker_engine");
+        System.setProperty(
+                "org.testcontainers.dockerclient.strategy",
+                "org.testcontainers.dockerclient.NpipeSocketClientProviderStrategy"
+        );
+    }
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
@@ -203,20 +224,21 @@ public abstract class BaseIntegrationTest {
         RegisterRequest request = RegisterRequest.builder()
                 .email(email)
                 .password(password)
-                .fullName("Test User")
-                .phone("08012345678")
+                .firstName("Test")
+                .lastName("User")
+                .phoneNumber("08012345678")
                 .build();
 
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andReturn();
 
-        AuthResponse response = objectMapper.readValue(
+        ApiResponse<AuthResponse> response = objectMapper.readValue(
                 result.getResponse().getContentAsString(),
-                AuthResponse.class);
-        return response.getAccessToken();
+                new TypeReference<ApiResponse<AuthResponse>>() {});
+        return response.getData().getAccessToken();
     }
 
     protected String loginAndGetToken(String email, String password) throws Exception {
@@ -231,18 +253,19 @@ public abstract class BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        AuthResponse response = objectMapper.readValue(
+        ApiResponse<AuthResponse> response = objectMapper.readValue(
                 result.getResponse().getContentAsString(),
-                AuthResponse.class);
-        return response.getAccessToken();
+                new TypeReference<ApiResponse<AuthResponse>>() {});
+        return response.getData().getAccessToken();
     }
 
     protected User createTestUser(String email, Role role) {
         User user = User.builder()
                 .email(email)
                 .password("$2a$10$encrypted")  // BCrypt placeholder
-                .fullName("Test User")
-                .phone("08012345678")
+                .firstName("Test")
+                .lastName("User")
+                .phoneNumber("08012345678")
                 .role(role)
                 .accountType(AccountType.INDIVIDUAL)
                 .build();
@@ -259,13 +282,13 @@ public abstract class BaseIntegrationTest {
                 .status(ListingStatus.DRAFT)
                 .condition(ListingCondition.GOOD)
                 .build();
-        
+
         if (type == ListingType.VEHICLE) {
             listing.setVehicleType(VehicleType.MOTORCYCLE);
         } else {
             listing.setPartName("Test Part");
         }
-        
+
         return listingRepository.save(listing);
     }
 
@@ -312,6 +335,13 @@ public abstract class BaseIntegrationTest {
     }
 }
 ```
+
+**Key differences from initial plan:**
+1. **Package:** Tests are in `com.ridelist.integration` package
+2. **Docker socket config:** Static block sets Windows Docker Desktop npipe socket for Testcontainers 2.x
+3. **Response parsing:** Uses `ApiResponse<AuthResponse>` wrapper with `TypeReference` for proper JSON deserialization
+4. **RegisterRequest fields:** Uses `firstName`, `lastName`, `phoneNumber` (matching actual DTO)
+5. **HTTP status codes:** Registration returns `201 Created` (not `200 OK`)
 
 ### 2.5 S3 Mock Configuration
 
@@ -362,25 +392,22 @@ public class S3MockConfig {
 
 ```
 src/test/java/com/ridelist/
-├── BaseIntegrationTest.java
-├── config/
-│   └── S3MockConfig.java
-├── controller/
-│   ├── AuthControllerIntegrationTest.java
-│   ├── ListingControllerIntegrationTest.java
-│   ├── FavoriteControllerIntegrationTest.java
-│   ├── MessageControllerIntegrationTest.java
-│   ├── AdminLocationControllerIntegrationTest.java
-│   ├── AdminAttributeControllerIntegrationTest.java
-│   └── LookupControllerIntegrationTest.java
-├── service/
-│   ├── ImageServiceIntegrationTest.java
-│   └── CacheBehaviorIntegrationTest.java
-├── data/
-│   └── DataIntegrityIntegrationTest.java
-└── performance/
+└── integration/
+    ├── BaseIntegrationTest.java
+    ├── AuthControllerIntegrationTest.java
+    ├── ListingControllerIntegrationTest.java
+    ├── FavoriteControllerIntegrationTest.java
+    ├── MessageControllerIntegrationTest.java
+    ├── AdminLocationControllerIntegrationTest.java
+    ├── AdminAttributeControllerIntegrationTest.java
+    ├── LookupControllerIntegrationTest.java
+    ├── ImageServiceIntegrationTest.java
+    ├── CacheBehaviorIntegrationTest.java
+    ├── DataIntegrityIntegrationTest.java
     └── PerformanceSanityTest.java
 ```
+
+**Note:** All integration tests are placed in the `com.ridelist.integration` package for organization.
 
 ### 3.2 Naming Conventions
 
@@ -409,7 +436,7 @@ src/test/java/com/ridelist/
 
 | Test ID | Scenario | Input | Expected Result |
 |---------|----------|-------|-----------------|
-| AUTH-001 | Register with valid data | Valid RegisterRequest | 200 OK, JWT tokens returned |
+| AUTH-001 | Register with valid data | Valid RegisterRequest | 201 Created, JWT tokens returned |
 | AUTH-002 | Register with duplicate email | Existing email | 409 Conflict |
 | AUTH-003 | Register with invalid email format | "notanemail" | 400 Bad Request |
 | AUTH-004 | Register with weak password | "123" | 400 Bad Request |
@@ -421,14 +448,16 @@ void register_validInput_returnsTokens() throws Exception {
     RegisterRequest request = RegisterRequest.builder()
             .email("newuser@test.com")
             .password("SecurePass123!")
-            .fullName("New User")
-            .phone("08012345678")
+            .firstName("New")
+            .lastName("User")
+            .phoneNumber("08012345678")
             .build();
 
     mockMvc.perform(post("/api/v1/auth/register")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isOk())
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.accessToken").exists())
             .andExpect(jsonPath("$.data.refreshToken").exists())
             .andExpect(jsonPath("$.data.user.email").value("newuser@test.com"));
@@ -442,8 +471,9 @@ void register_duplicateEmail_returns409() throws Exception {
     RegisterRequest request = RegisterRequest.builder()
             .email("existing@test.com")
             .password("SecurePass123!")
-            .fullName("Another User")
-            .phone("08012345679")
+            .firstName("Another")
+            .lastName("User")
+            .phoneNumber("08012345679")
             .build();
 
     mockMvc.perform(post("/api/v1/auth/register")
@@ -1946,8 +1976,9 @@ public class TestDataBuilder {
         return RegisterRequest.builder()
                 .email("test@example.com")
                 .password("SecurePass123!")
-                .fullName("Test User")
-                .phone("08012345678");
+                .firstName("Test")
+                .lastName("User")
+                .phoneNumber("08012345678");
     }
     
     public static CreateListingRequest.CreateListingRequestBuilder aVehicleListing() {
