@@ -1,194 +1,167 @@
-You are a senior Spring Boot engineer, QA architect, and distributed systems engineer.
+You are a senior Spring Boot engineer and cloud-native systems architect.
 
-You are given a file `claude.md` which contains the full system design and feature set of a marketplace application called RideList.
+Implement an ultra-lean, production-ready logging and monitoring setup for a Spring Boot application (RideList) running on Kubernetes (AWS EKS).
 
-Your task is to design a COMPREHENSIVE, production-grade integration test plan for the MVP.
+The goal is:
+- Structured logging
+- Request traceability
+- Minimal operational overhead
+- Cloud-native compatibility
 
----
-
-# 🎯 OBJECTIVE
-
-Produce a test plan that ensures the system is stable, correct, and resilient enough to support the first 100 active seller users.
-
-This is NOT unit testing.
-
-Focus on:
-- End-to-end flows
-- Real database behavior
-- API-level correctness
-- Data integrity
-- Security enforcement
+DO NOT introduce unnecessary infrastructure like MongoDB or ELK for MVP.
 
 ---
 
-# ⚙️ TEST ENVIRONMENT REQUIREMENTS
+# 🧱 LOGGING REQUIREMENTS
 
-- Use real PostgreSQL (DO NOT use H2)
-- Use Testcontainers for PostgreSQL
-- Provide application-test.yml configuration
-- Use a separate test database
+## 1. Structured JSON Logging
 
-- Mock or stub AWS S3 interactions (do NOT call real S3)
-- Use @SpringBootTest (full context)
+Use Logback with logstash encoder.
 
----
+Logs must be JSON formatted and include:
 
-# 🧱 TEST COVERAGE AREAS
-
-## 1. AUTHENTICATION & SECURITY
-- Register user
-- Login
-- Invalid login attempts
-- JWT validation
-- Access control:
- - USER endpoints
- - ADMIN endpoints
-- Unauthorized access attempts
+- timestamp
+- log level
+- service name
+- traceId (correlation ID)
+- thread
+- logger
+- message
+- optional context (userId, listingId, etc.)
 
 ---
 
-## 2. LISTING LIFECYCLE (CRITICAL PATH)
-- Create listing (vehicle + part)
-- Upload images
-- Update listing
-- Publish listing
-- Mark as sold
-- Delete listing
+## 2. Dependencies
 
-Validate:
-- ownership enforcement
-- invalid inputs
-- missing fields
+Add:
+
+- spring-boot-starter-logging
+- logstash-logback-encoder
 
 ---
 
-## 3. IMAGE UPLOAD (S3 INTEGRATION)
-- Upload multiple images
-- Reject invalid formats
-- Reject oversized files
-- Ensure metadata persistence
-- Handle S3 failure gracefully (mocked)
+## 3. Logback Configuration
+
+Create logback-spring.xml:
+
+- Use LogstashEncoder
+- Output logs to STDOUT (important for Kubernetes)
+- Include MDC fields automatically
 
 ---
 
-## 4. LOCATION SYSTEM
-- Admin creates State → Axis → Area
-- Fetch hierarchy
-- Validate relationships
-- Invalid parent references
+## 4. Correlation ID (VERY IMPORTANT)
+
+Implement a request filter:
+
+- Generate a UUID per request
+- Store in MDC as "traceId"
+- Add to response header (X-Trace-Id)
+
+Example:
+
+MDC.put("traceId", UUID.randomUUID().toString());
+
+Ensure:
+- Cleared after request completes
 
 ---
 
-## 5. DYNAMIC ATTRIBUTE SYSTEM
-- Admin creates attribute
-- Seller assigns attributes to listing
-- Retrieve listing with attributes
-- Filter listings using attributes
+## 5. Logging Best Practices
+
+- Use parameterized logging (no string concatenation)
+- Log key events:
+    - user registration
+    - login attempts
+    - listing creation/update
+    - image upload
+- Log errors with stack trace
+
+DO NOT log:
+- passwords
+- sensitive tokens
 
 ---
 
-## 6. FAVORITES
-- Add to favorites
-- Prevent duplicates
-- Remove favorite
-- Fetch user favorites
+# 🧱 MONITORING REQUIREMENTS
+
+## 6. Spring Boot Actuator
+
+Enable:
+
+/actuator/health
+/actuator/info
+/actuator/metrics
+
+Expose via application.yml:
+
+management:
+endpoints:
+web:
+exposure:
+include: health,info,metrics
 
 ---
 
-## 7. MESSAGING / INQUIRY
-- Send inquiry
-- Retrieve seller messages
-- Validate message linkage to listing
+## 7. Kubernetes Readiness
+
+Ensure:
+
+- /actuator/health used for liveness/readiness probes
+- Logs go to STDOUT (Kubernetes best practice)
 
 ---
 
-## 8. CACHE BEHAVIOR
-- First request hits DB
-- Subsequent request uses cache
-- Cache eviction after admin update
+## 8. Metrics (Basic)
+
+Expose:
+- HTTP request count
+- error rates
+- JVM metrics
+
+(No Prometheus setup required in MVP, just ensure Actuator works)
 
 ---
 
-## 9. DATA INTEGRITY
-- Cascading deletes (listing → images, favorites)
-- Unique constraints enforcement
-- Foreign key validation
+# 🧱 OPTIONAL (LIGHT ENHANCEMENT)
+
+If simple to add:
+
+- Integrate Micrometer (already included via actuator)
+- Tag metrics with:
+    - endpoint
+    - status code
 
 ---
 
-## 10. SEARCH & FILTERING
-- Filter by:
- - price range
- - state/axis/area
- - listingType
- - attributes
-- Combine filters
-- Empty result handling
+# 🧱 OUTPUT
 
----
+Generate:
 
-# ⚡ PERFORMANCE SANITY (LIGHT)
+- logback-spring.xml
+- CorrelationIdFilter (OncePerRequestFilter)
+- Sample logging usage in a service class
+- application.yml additions
 
-Simulate:
-- ~100 listings
-- ~100 users
-
-Test:
-- listing retrieval performance
-- filtering response time
-
-(No need for full load testing — just sanity checks)
-
----
-
-# 🧱 TEST STRUCTURE
-
-Define:
-
-- Test class naming conventions
-- Package structure
-- Use of:
- - @SpringBootTest
- - @Testcontainers
- - @Transactional (where appropriate)
-
----
-
-# 🧪 TEST DATA STRATEGY
-
-- Use builders or fixtures
-- Avoid hardcoded IDs
-- Reusable test data setup
-
----
-
-# 📄 OUTPUT FORMAT
-
-Produce a MARKDOWN document named:
-
-TEST_PLAN.md
-
-Structure:
-
-1. Overview
-2. Test Environment Setup
-3. Test Strategy
-4. Test Scenarios (grouped by feature)
-5. Edge Cases
-6. Performance Considerations
-7. Risks & Gaps
+Keep implementation clean, minimal, and production-ready.
 
 ---
 
 # ⚠️ CONSTRAINTS
 
-- Keep it MVP-focused (do NOT overengineer)
-- Do NOT include unit tests
-- Do NOT include UI tests
-- Focus strictly on backend integration tests
+- DO NOT introduce MongoDB
+- DO NOT introduce ELK stack
+- DO NOT overengineer
+- Keep it Kubernetes-friendly (STDOUT logging)
 
 ---
 
 # 🎯 GOAL
 
-The output should be actionable by an engineer to implement tests immediately.
+Logs should be easily consumable by Kubernetes log collectors (e.g., Fluent Bit → CloudWatch).
+
+System should be debuggable and observable with minimal setup.
+
+
+### Update context
+Update the CLAUDE.md file of this project with this newly added context/functionalities

@@ -5,6 +5,7 @@ import com.ridelist.dto.request.LoginRequest;
 import com.ridelist.dto.request.RegisterRequest;
 import com.ridelist.dto.response.AuthResponse;
 import com.ridelist.exception.BadRequestException;
+import com.ridelist.exception.DuplicateResourceException;
 import com.ridelist.model.User;
 import com.ridelist.repository.UserRepository;
 import com.ridelist.security.JwtTokenProvider;
@@ -31,7 +32,7 @@ public class AuthService {
         log.info("Registering new user with email: {}", request.getEmail());
 
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new BadRequestException("Email is already registered");
+            throw new DuplicateResourceException("User", "email", request.getEmail());
         }
 
         User user = userMapper.toEntity(request);

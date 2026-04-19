@@ -13,6 +13,8 @@ RideList is a **marketplace for motorcycles, tricycles, bicycles, spare parts, a
 | Auth | JWT (jjwt 0.12.5), Spring Security |
 | Storage | AWS S3 (SDK v2) for images |
 | Mapping | MapStruct 1.5.5 with Lombok binding |
+| Logging | Logback with Logstash JSON encoder |
+| Monitoring | Spring Boot Actuator |
 | Build | Maven |
 
 ## Project Structure
@@ -21,17 +23,18 @@ RideList is a **marketplace for motorcycles, tricycles, bicycles, spare parts, a
 src/main/java/com/ridelist/
 ├── cache/           # In-memory caching components (InMemoryCache)
 ├── config/          # Configuration classes (Security, S3, JWT properties)
-├── controller/      # REST controllers (TO BE IMPLEMENTED)
+├── controller/      # REST controllers
 ├── dto/
 │   ├── mapper/      # MapStruct mappers
 │   ├── request/     # Inbound DTOs with validation
 │   └── response/    # Outbound DTOs
 ├── exception/       # Global exception handling
+├── filter/          # Servlet filters (CorrelationIdFilter)
 ├── model/           # JPA entities and enums
 ├── repository/      # Spring Data JPA repositories
 ├── security/        # JWT filter, token provider, UserPrincipal
-├── service/         # Business logic (TO BE IMPLEMENTED)
-└── util/            # Utilities (@CurrentUser annotation, SlugUtil)
+├── service/         # Business logic
+└── util/            # Utilities (@CurrentUser, SlugUtil, LogContext)
 ```
 
 ## Domain Model
@@ -827,6 +830,187 @@ Public endpoints for frontend clients to fetch cached reference data for UI cons
 - Data is lazy-loaded on first request
 - Cached for 10 hours (TTL)
 - Automatically invalidated when admin modifies location or categorization data
+
+## Logging & Monitoring
+
+### Overview
+
+RideList uses structured JSON logging for Kubernetes compatibility and Spring Boot Actuator for health checks and metrics.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Kubernetes / EKS                              │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐  │
+│  │ Fluent Bit  │ ←─ │   STDOUT    │ ←─ │   RideList App      │  │
+│  │ (collector) │    │ (JSON logs) │    │   (Logback JSON)    │  │
+│  └─────────────┘    └─────────────┘    └─────────────────────┘  │
+│         │                                        │               │
+│         ▼                                        ▼               │
+│  ┌─────────────┐                         ┌─────────────────┐    │
+│  │ CloudWatch  │                         │ /actuator/health│    │
+│  │   Logs      │                         │ (K8s probes)    │    │
+│  └─────────────┘                         └─────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Structured JSON Logging
+
+**Configuration:** `src/main/resources/logback-spring.xml`
+
+Logs are JSON-formatted for easy parsing by log aggregators (Fluent Bit, CloudWatch, etc.).
+
+**Log Fields:**
+| Field | Description |
+|-------|-------------|
+| `timestamp` | UTC timestamp |
+| `level` | Log level (INFO, WARN, ERROR, DEBUG) |
+| `service` | Application name ("ridelist") |
+| `traceId` | Correlation ID for request tracing |
+| `userId` | Current user ID (when available) |
+| `listingId` | Current listing ID (when available) |
+| `thread` | Thread name |
+| `logger` | Logger class name |
+| `message` | Log message |
+
+**Example JSON Log:**
+```json
+{
+  "timestamp": "2024-01-15T10:30:45.123Z",
+  "level": "INFO",
+  "service": "ridelist",
+  "traceId": "550e8400-e29b-41d4-a716-446655440000",
+  "userId": "123e4567-e89b-12d3-a456-426614174000",
+  "thread": "http-nio-8080-exec-1",
+  "logger": "com.ridelist.service.AuthService",
+  "message": "User registered successfully"
+}
+```
+
+**Profile-based Configuration:**
+| Profile | Format | Log Level |
+|---------|--------|-----------|
+| `prod`, `staging`, `k8s` | JSON to STDOUT | INFO |
+| `default`, `dev`, `local` | Plain text | DEBUG |
+| `test` | Plain text (minimal) | WARN |
+
+### Correlation ID (Request Tracing)
+
+**Component:** `filter/CorrelationIdFilter.java`
+
+Every request gets a unique `traceId` for end-to-end tracing:
+1. Filter generates UUID (or uses incoming `X-Trace-Id` header)
+2. Stored in MDC for automatic inclusion in all logs
+3. Returned in `X-Trace-Id` response header
+
+**Usage:**
+```java
+// traceId is automatically included in all logs within the request
+log.info("Processing listing creation");  // traceId in output
+
+// Get current traceId programmatically
+String traceId = LogContext.getTraceId();
+```
+
+### Adding Context to Logs
+
+**Utility:** `util/LogContext.java`
+
+Add contextual information to logs within a request:
+
+```java
+// In a service method
+public void processListing(UUID listingId, UUID userId) {
+    LogContext.setUserId(userId);
+    LogContext.setListingId(listingId);
+    
+    try {
+        log.info("Starting listing process");  // userId & listingId in output
+        // ... business logic
+    } finally {
+        LogContext.clearAll();
+    }
+}
+```
+
+### Logging Best Practices
+
+**DO:**
+```java
+// Parameterized logging (efficient - no string concat if level disabled)
+log.info("User {} registered successfully", userId);
+log.debug("Listing {} updated with price {}", listingId, price);
+
+// Log key events
+log.info("User registered: {}", email);
+log.info("Login attempt for: {}", email);
+log.info("Listing created: {} by seller {}", listingId, sellerId);
+log.info("Image uploaded for listing: {}", listingId);
+log.error("Failed to process payment", exception);
+```
+
+**DON'T:**
+```java
+// Never log sensitive data
+log.info("Password: " + password);        // NEVER
+log.info("JWT token: {}", token);          // NEVER
+log.debug("Credit card: {}", cardNumber);  // NEVER
+```
+
+### Spring Boot Actuator
+
+**Endpoints enabled:**
+
+| Endpoint | URL | Description |
+|----------|-----|-------------|
+| Health | `/actuator/health` | Application health status |
+| Liveness | `/actuator/health/liveness` | Kubernetes liveness probe |
+| Readiness | `/actuator/health/readiness` | Kubernetes readiness probe |
+| Info | `/actuator/info` | Application information |
+| Metrics | `/actuator/metrics` | Micrometer metrics |
+
+**Kubernetes Probe Configuration:**
+```yaml
+# Example Kubernetes deployment
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+**Health Check Response:**
+```json
+{
+  "status": "UP",
+  "components": {
+    "db": { "status": "UP" },
+    "diskSpace": { "status": "UP" }
+  }
+}
+```
+
+### Metrics (Micrometer)
+
+Default metrics available at `/actuator/metrics`:
+- `http.server.requests` - HTTP request count, latency
+- `jvm.memory.used` - JVM memory usage
+- `jvm.gc.pause` - Garbage collection pauses
+- `system.cpu.usage` - CPU usage
+- `hikaricp.connections.active` - Database connection pool
+
+**Example metric query:**
+```
+GET /actuator/metrics/http.server.requests
+GET /actuator/metrics/http.server.requests?tag=uri:/api/v1/listings
+```
 
 ## OpenAPI / Swagger
 

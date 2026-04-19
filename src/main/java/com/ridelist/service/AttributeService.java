@@ -34,7 +34,7 @@ public class AttributeService {
         String slug = SlugUtil.toSlug(request.getName());
 
         if (attributeDefinitionRepository.existsBySlug(slug)) {
-            throw new DuplicateResourceException("Attribute with slug '" + slug + "' already exists");
+            throw new DuplicateResourceException("Attribute", "slug", slug);
         }
 
         AttributeDefinition attribute = AttributeDefinition.builder()
@@ -62,7 +62,7 @@ public class AttributeService {
         if (request.getName() != null && !request.getName().isBlank()) {
             String newSlug = SlugUtil.toSlug(request.getName());
             if (!newSlug.equals(attribute.getSlug()) && attributeDefinitionRepository.existsBySlug(newSlug)) {
-                throw new DuplicateResourceException("Attribute with slug '" + newSlug + "' already exists");
+                throw new DuplicateResourceException("Attribute", "slug", newSlug);
             }
             attribute.setName(request.getName());
             attribute.setSlug(newSlug);
