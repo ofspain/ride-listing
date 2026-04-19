@@ -155,8 +155,10 @@ public abstract class BaseIntegrationTest {
 
         if (type == ListingType.VEHICLE) {
             listing.setVehicleType(VehicleType.MOTORCYCLE);
+            listing.setCategory(ListingCategory.MOTORCYCLE);
         } else {
             listing.setPartName("Test Part");
+            listing.setCategory(ListingCategory.SPARE_PART);
         }
 
         return listingRepository.save(listing);

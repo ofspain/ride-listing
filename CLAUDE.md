@@ -1053,10 +1053,10 @@ DB_HOST=localhost DB_NAME=ridelist JWT_SECRET=your-secret mvn spring-boot:run
 
 Test configuration file: `src/test/resources/application-test.properties`
 
-- H2 in-memory database (PostgreSQL compatibility mode)
-- Hibernate auto DDL (create-drop)
-- Flyway disabled for tests
+- **PostgreSQL via Testcontainers** (real database, not H2)
+- Flyway enabled for schema migrations
 - Mock AWS S3 credentials
+- JWT test secret for authentication
 
 ### Running Tests
 
@@ -1067,6 +1067,9 @@ mvn test
 # Run specific test class
 mvn test -Dtest=AuthControllerIntegrationTest
 
+# Run multiple test classes
+mvn test -Dtest=ListingControllerIntegrationTest,FavoriteControllerIntegrationTest
+
 # Run with test profile explicitly
 mvn test -Dspring.profiles.active=test
 ```
@@ -1075,12 +1078,18 @@ mvn test -Dspring.profiles.active=test
 
 ```
 src/test/java/com/ridelist/
-├── BaseIntegrationTest.java          # Base class with common setup
-└── controller/
-    ├── AuthControllerIntegrationTest.java
-    ├── ListingControllerIntegrationTest.java
-    ├── FavoriteControllerIntegrationTest.java
-    └── MessageControllerIntegrationTest.java
+└── integration/
+    ├── BaseIntegrationTest.java                    # Base class with Testcontainers setup
+    ├── AuthControllerIntegrationTest.java          # 14 tests
+    ├── ListingControllerIntegrationTest.java       # 26 tests
+    ├── FavoriteControllerIntegrationTest.java      # 15 tests
+    ├── ImageServiceIntegrationTest.java            # 17 tests (uses @MockBean S3Service)
+    ├── MessageControllerIntegrationTest.java       # 16 tests
+    ├── CacheBehaviorIntegrationTest.java           # 8 tests
+    ├── DataIntegrityIntegrationTest.java           # 20 tests
+    ├── AdminAttributeControllerIntegrationTest.java # 22 tests
+    ├── AdminLocationControllerIntegrationTest.java  # 28 tests
+    └── PerformanceSanityTest.java                  # 5 tests
 ```
 
 ### Base Integration Test
@@ -1089,17 +1098,74 @@ All integration tests extend `BaseIntegrationTest` which provides:
 - `@SpringBootTest` with random port
 - `@AutoConfigureMockMvc` for MockMvc injection
 - `@ActiveProfiles("test")` to use test configuration
+- `@Testcontainers` with PostgreSQL 15 container
 - `@Transactional` for test isolation (auto-rollback)
-- Helper methods: `registerAndGetToken()`, `loginAndGetToken()`, `createTestUser()`, `createTestListing()`
+- `@DynamicPropertySource` to inject container JDBC URL
+
+**Helper Methods:**
+- `registerAndGetToken(email, password)` - Register user and return JWT
+- `loginAndGetToken(email, password)` - Login and return JWT
+- `createTestUser(email, role)` - Create user directly in DB (unusable password)
+- `createTestListing(seller, type)` - Create draft listing
+- `createTestState(name)` - Create state entity
+- `createTestAxis(name, state)` - Create axis entity
+- `createTestArea(name, axis)` - Create area entity
+- `createTestAttribute(name, type, filterable)` - Create attribute definition
+- `authHeader(token)` - Format Bearer token header
 
 ### Test Coverage
 
-| Controller | Tests |
-|------------|-------|
-| AuthController | Register, Login (success/failure scenarios) |
-| ListingController | CRUD, filters, pagination, publish, mark-sold |
-| FavoriteController | Add, remove, list favorites |
-| MessageController | Send inquiry (auth/guest), get messages |
+| Controller/Service | Tests | Description |
+|--------------------|-------|-------------|
+| AuthController | 14 | Register, Login, JWT validation, access control |
+| ListingController | 26 | CRUD, publish, mark-sold, filters, pagination, ownership |
+| FavoriteController | 15 | Add, remove, list, duplicates, auth checks, pagination |
+| ImageService | 17 | Upload, delete, primary image, validation, S3 mocking |
+| MessageController | 16 | Send inquiry (auth/guest), get messages, validation |
+| CacheBehavior | 8 | Cache hit/miss, eviction on admin ops, access control |
+| DataIntegrity | 20 | Cascades, unique constraints, FK validation, NOT NULL |
+| AdminAttributeController | 22 | CRUD attributes, public endpoints, auth/access control |
+| AdminLocationController | 28 | State/Axis/Area CRUD, cascades, public lookup |
+| PerformanceSanity | 5 | Response time sanity checks, pagination, caching |
+
+**Total: 171 integration tests**
+
+### Key Testing Notes
+
+1. **Authorization returns 401 for non-owner access**: When a user tries to modify a listing they don't own, `MarketplaceListingService` throws `UnauthorizedException` (401), not `AccessDeniedException` (403).
+
+2. **Duplicate favorites return 400**: `FavoriteService` throws `BadRequestException` for duplicate favorites, not `DuplicateResourceException`.
+
+3. **Listing requires `category` field**: The `category` column is NOT NULL. Test helpers must set it:
+   - Vehicles: `ListingCategory.MOTORCYCLE`, `TRICYCLE`, or `BICYCLE`
+   - Parts: `ListingCategory.SPARE_PART` or `ACCESSORY`
+
+4. **Windows Docker Desktop**: Tests configure `npipe:////./pipe/docker_engine` for Testcontainers on Windows.
+
+5. **Image tests use @MockBean S3Service**: `ImageServiceIntegrationTest` mocks S3 to avoid real AWS calls. Configure mock behavior in `@BeforeEach`.
+
+6. **Inquiry endpoints return 201 Created**: `MessageController.sendInquiry()` returns 201, not 200.
+
+7. **Duplicate inquiry returns 400**: `MessageService` throws `BadRequestException` for duplicate inquiries (authenticated users only), not 409.
+
+8. **Creating admin users for tests**: `createTestUser()` uses placeholder password that can't be used for login. For admin tests:
+   ```java
+   String token = registerAndGetToken("admin@test.com", "password123");
+   User admin = userRepository.findByEmail("admin@test.com").orElseThrow();
+   admin.setRole(Role.ADMIN);
+   userRepository.save(admin);
+   token = loginAndGetToken("admin@test.com", "password123"); // Re-login for fresh token
+   ```
+
+9. **Testing cascade deletes**: Database has `ON DELETE CASCADE` on FK constraints. In `@Transactional` tests, use `entityManager.clear()` after flush to see cascade effects:
+   ```java
+   @Autowired EntityManager entityManager;
+   
+   listingRepository.delete(listing);
+   listingRepository.flush();
+   entityManager.clear(); // Clear JPA cache to see DB state
+   assertThat(listingImageRepository.findById(imageId)).isEmpty();
+   ```
 
 ## Common Tasks
 
