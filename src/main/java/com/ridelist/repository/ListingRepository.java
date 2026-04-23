@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.jpa.repository.Modifying;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -69,4 +71,11 @@ public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpec
     long countBySellerId(UUID sellerId);
 
     List<Listing> findTop10ByStatusOrderByCreatedAtDesc(ListingStatus status);
+
+    @Modifying
+    @Query("UPDATE Listing l SET l.status = :newStatus WHERE l.seller.id = :sellerId AND l.status NOT IN (:excludeStatuses)")
+    int updateStatusBySellerIdAndStatusNotIn(
+            @Param("sellerId") UUID sellerId,
+            @Param("newStatus") ListingStatus newStatus,
+            @Param("excludeStatuses") List<ListingStatus> excludeStatuses);
 }

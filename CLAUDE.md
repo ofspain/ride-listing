@@ -41,7 +41,7 @@ src/main/java/com/ridelist/
 
 ### Core Entities
 
-- **User** - accounts with `AccountType` (INDIVIDUAL/DEALER), state, role
+- **User** - accounts with `AccountType` (INDIVIDUAL/DEALER), state, role, soft delete support
 - **Listing** - single table for vehicles and parts, discriminated by `ListingType`
 - **ListingImage** - S3-backed images with display order
 - **ContactRequest** - buyer inquiries (supports both authenticated and anonymous)
@@ -216,6 +216,7 @@ Located in `src/main/resources/db/migration/`:
 - V6: Location hierarchy (states, axes, areas tables + listing location columns)
 - V7: Vehicle categorization (makes, vehicle_models, model_years tables + listing categorization columns)
 - V8: Dynamic attributes (attribute_definitions, listing_attribute_values tables)
+- V9: Soft delete support (deleted_at column on users table)
 
 ### Connection
 Configured via environment variables:
@@ -371,6 +372,30 @@ Manages user's saved/favorited listings:
 - Cannot favorite deleted listings
 - Cannot favorite your own listing
 - Duplicate favorites prevented (unique constraint)
+
+### AccountService
+
+Location: `service/AccountService.java`
+
+Handles user account management, including soft delete:
+- `deleteAccount(UUID userId)` - Soft delete user account
+
+**Delete Account Flow:**
+1. Validate user exists and is not already deleted
+2. Disable account (`enabled = false`, `deletedAt = now`)
+3. Mark all user's listings as `DELETED` (except already SOLD/DELETED)
+4. Delete all user's favorites
+5. Messages are preserved for historical records
+
+**Validation:**
+- Cannot delete already deleted account
+- Returns `BadRequestException` if account is already deleted/disabled
+
+**Soft Delete Implementation:**
+- User entity uses `@Where(clause = "enabled = true AND deleted_at IS NULL")` for global filtering
+- Deleted users are automatically excluded from all JPA queries
+- Authentication explicitly checks `deletedAt` to reject deleted user logins
+- Listing queries join with seller and filter out deleted sellers
 
 ### S3Service
 
@@ -712,6 +737,30 @@ Location: `controller/FavoriteController.java`
 | DELETE | `/api/v1/account/favorites/{listingId}` | Remove listing from favorites |
 | GET | `/api/v1/account/favorites` | Get user's favorite listings |
 
+### AccountController
+
+Location: `controller/AccountController.java`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| DELETE | `/api/v1/account` | Delete authenticated user's account (soft delete) |
+
+**Delete Account Response:**
+```json
+{
+  "success": true,
+  "message": "Account deleted successfully",
+  "timestamp": "2024-01-15T10:30:45.123"
+}
+```
+
+**Effects of Account Deletion:**
+- User cannot log in or access the system
+- User's listings become invisible in public queries
+- User's favorites are deleted
+- User's messages are preserved
+- All data is retained for historical records (soft delete)
+
 ### AdminLocationController (ADMIN ONLY)
 
 Location: `controller/AdminLocationController.java`
@@ -1031,8 +1080,8 @@ API documentation is available via Springdoc OpenAPI.
 
 ## What Needs Implementation
 
-1. **Services**: UserService
-2. **Controllers**: UserController
+1. **Services**: UserService (profile management, user lookup)
+2. **Controllers**: UserController (profile endpoints)
 
 ## Build & Run
 

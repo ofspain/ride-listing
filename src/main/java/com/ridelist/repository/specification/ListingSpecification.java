@@ -29,6 +29,11 @@ public class ListingSpecification {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            // Exclude listings from deleted/disabled sellers
+            Join<Listing, ?> sellerJoin = root.join("seller", JoinType.INNER);
+            predicates.add(criteriaBuilder.isTrue(sellerJoin.get("enabled")));
+            predicates.add(criteriaBuilder.isNull(sellerJoin.get("deletedAt")));
+
             // Status filter
             if (status != null) {
                 predicates.add(criteriaBuilder.equal(root.get("status"), status));

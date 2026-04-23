@@ -34,4 +34,8 @@ public interface FavoriteRepository extends JpaRepository<Favorite, UUID> {
 
     @Query("SELECT f.listing.id FROM Favorite f WHERE f.user.id = :userId")
     List<UUID> findListingIdsByUserId(@Param("userId") UUID userId);
+
+    @Modifying
+    @Query("DELETE FROM Favorite f WHERE f.user.id = :userId")
+    void deleteAllByUserId(@Param("userId") UUID userId);
 }

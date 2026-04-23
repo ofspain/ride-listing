@@ -404,7 +404,11 @@ src/test/java/com/ridelist/
     ├── ImageServiceIntegrationTest.java
     ├── CacheBehaviorIntegrationTest.java
     ├── DataIntegrityIntegrationTest.java
-    └── PerformanceSanityTest.java
+    ├── PerformanceSanityTest.java
+    ├── AccountDeletionIntegrationTest.java        # Delete account tests
+    ├── AuthAfterDeletionIntegrationTest.java      # Auth blocking after deletion
+    ├── ListingVisibilityAfterDeletionTest.java    # Listing filtering tests
+    └── DeleteAccountDataIntegrityTest.java        # Data integrity for deletion
 ```
 
 **Note:** All integration tests are placed in the `com.ridelist.integration` package for organization.
@@ -1441,7 +1445,229 @@ class CacheBehaviorIntegrationTest extends BaseIntegrationTest {
 
 ---
 
-### 4.9 Data Integrity
+### 4.9 Delete Account (Soft Delete)
+
+**Test Class:** `AccountDeletionIntegrationTest`
+
+The delete account feature uses soft delete to preserve data integrity while making deleted users invisible.
+
+#### Account Deletion Flow
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| DEL-001 | Successfully delete own account | Valid token | 200 OK, success message |
+| DEL-002 | Verify enabled = false after deletion | Deleted account | enabled = false in DB |
+| DEL-003 | Verify deletedAt is set after deletion | Deleted account | deletedAt != null in DB |
+| DEL-004 | Attempt to delete already deleted account | Second delete call | 401 Unauthorized |
+| DEL-005 | Delete account without authentication | No token | 401 Unauthorized |
+
+```java
+@Test
+void deleteAccount_validToken_returnsSuccess() throws Exception {
+    String token = registerAndGetToken("user@test.com", "Password123!");
+
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(token)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.message").value("Account deleted successfully"));
+}
+
+@Test
+void deleteAccount_verifyEnabledFalseAndDeletedAtSet() throws Exception {
+    String token = registerAndGetToken("user@test.com", "Password123!");
+    User user = userRepository.findByEmail("user@test.com").orElseThrow();
+    UUID userId = user.getId();
+
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(token)))
+            .andExpect(status().isOk());
+
+    // Use native query to bypass @Where filter
+    User deletedUser = userRepository.findByIdIncludingDeleted(userId).orElseThrow();
+    assertThat(deletedUser.isEnabled()).isFalse();
+    assertThat(deletedUser.getDeletedAt()).isNotNull();
+}
+```
+
+#### Authentication After Deletion
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| DEL-010 | Deleted user cannot login | Correct credentials | 401 Unauthorized |
+| DEL-011 | Deleted user cannot access protected endpoints | Existing JWT | 401 Unauthorized |
+| DEL-012 | JWT validation rejects deleted user | Valid token structure | 401 Unauthorized |
+| DEL-013 | Re-register with same email after deletion | Same email | 201 Created (new account) |
+
+```java
+@Test
+void login_deletedUser_returns401() throws Exception {
+    String email = "user@test.com";
+    String password = "Password123!";
+    String token = registerAndGetToken(email, password);
+
+    // Delete account
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(token)))
+            .andExpect(status().isOk());
+
+    // Attempt login
+    LoginRequest request = LoginRequest.builder()
+            .email(email)
+            .password(password)
+            .build();
+
+    mockMvc.perform(post("/api/v1/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isUnauthorized());
+}
+```
+
+#### Global Filtering Enforcement
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| DEL-020 | Deleted user not returned in findByEmail | Standard query | Optional.empty() |
+| DEL-021 | Deleted user not returned in findById | Standard query | Optional.empty() |
+| DEL-022 | Native query returns deleted user | findByIdIncludingDeleted | User returned |
+| DEL-023 | System behaves as if user does not exist | Various queries | User invisible |
+
+```java
+@Test
+void findByEmail_deletedUser_returnsEmpty() throws Exception {
+    String email = "user@test.com";
+    String token = registerAndGetToken(email, "Password123!");
+
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(token)))
+            .andExpect(status().isOk());
+
+    // Standard query should not find deleted user (@Where filter applied)
+    Optional<User> user = userRepository.findByEmail(email);
+    assertThat(user).isEmpty();
+}
+```
+
+#### Listing Visibility After Deletion
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| DEL-030 | User's listings marked as DELETED | Delete account | All listings status = DELETED |
+| DEL-031 | SOLD listings remain SOLD | Delete account | SOLD status preserved |
+| DEL-032 | Listings not visible in public API | GET /listings | Filtered out |
+| DEL-033 | Listings not visible in search results | Filter query | Not returned |
+
+```java
+@Test
+void deleteAccount_listingsMarkedAsDeleted() throws Exception {
+    String token = registerAndGetToken("seller@test.com", "Password123!");
+    User seller = userRepository.findByEmail("seller@test.com").orElseThrow();
+    
+    Listing listing = createTestListing(seller, ListingType.VEHICLE);
+    listing.setStatus(ListingStatus.ACTIVE);
+    listingRepository.save(listing);
+    UUID listingId = listing.getId();
+
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(token)))
+            .andExpect(status().isOk());
+
+    entityManager.clear();
+    Listing deleted = listingRepository.findById(listingId).orElseThrow();
+    assertThat(deleted.getStatus()).isEqualTo(ListingStatus.DELETED);
+}
+
+@Test
+void getListings_deletedSeller_listingsNotVisible() throws Exception {
+    String token = registerAndGetToken("seller@test.com", "Password123!");
+    User seller = userRepository.findByEmail("seller@test.com").orElseThrow();
+    State state = createTestState("Lagos");
+
+    Listing listing = createTestListing(seller, ListingType.VEHICLE);
+    listing.setStatus(ListingStatus.ACTIVE);
+    listing.setState(state);
+    listingRepository.save(listing);
+
+    // Verify listing is visible before deletion
+    mockMvc.perform(get("/api/v1/listings"))
+            .andExpect(jsonPath("$.data.content.length()").value(1));
+
+    // Delete account
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(token)))
+            .andExpect(status().isOk());
+
+    // Verify listing is not visible after deletion
+    mockMvc.perform(get("/api/v1/listings"))
+            .andExpect(jsonPath("$.data.content.length()").value(0));
+}
+```
+
+#### Favorites & Messages
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| DEL-040 | User's favorites are deleted | Delete account | No favorites remain |
+| DEL-041 | No orphan favorite records | After deletion | favoriteRepository count = 0 for user |
+| DEL-050 | Messages preserved after deletion | Delete buyer/seller | Messages still exist |
+
+```java
+@Test
+void deleteAccount_favoritesDeleted() throws Exception {
+    User seller = createTestUser("seller@test.com", Role.USER);
+    Listing listing = createTestListing(seller, ListingType.VEHICLE);
+    listing.setStatus(ListingStatus.ACTIVE);
+    listingRepository.save(listing);
+
+    String buyerToken = registerAndGetToken("buyer@test.com", "Password123!");
+    User buyer = userRepository.findByEmail("buyer@test.com").orElseThrow();
+
+    Favorite favorite = favoriteRepository.save(
+            Favorite.builder().user(buyer).listing(listing).build());
+    UUID favoriteId = favorite.getId();
+
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(buyerToken)))
+            .andExpect(status().isOk());
+
+    entityManager.clear();
+    assertThat(favoriteRepository.findById(favoriteId)).isEmpty();
+}
+
+@Test
+void deleteAccount_messagesPreserved() throws Exception {
+    String sellerToken = registerAndGetToken("seller@test.com", "Password123!");
+    User seller = userRepository.findByEmail("seller@test.com").orElseThrow();
+    Listing listing = createTestListing(seller, ListingType.VEHICLE);
+    listing.setStatus(ListingStatus.ACTIVE);
+    listingRepository.save(listing);
+
+    User buyer = createTestUser("buyer@test.com", Role.USER);
+    ContactRequest inquiry = contactRequestRepository.save(
+            ContactRequest.builder()
+                    .listing(listing)
+                    .buyer(buyer)
+                    .message("Is this available?")
+                    .build());
+    UUID inquiryId = inquiry.getId();
+
+    // Delete seller
+    mockMvc.perform(delete("/api/v1/account")
+                    .header("Authorization", authHeader(sellerToken)))
+            .andExpect(status().isOk());
+
+    // Messages preserved
+    entityManager.clear();
+    assertThat(contactRequestRepository.findById(inquiryId)).isPresent();
+}
+```
+
+**Note:** For full test plan details, see `DELETE_ACCOUNT_TEST_PLAN.md`.
+
+---
+
+### 4.10 Data Integrity
 
 **Test Class:** `DataIntegrityIntegrationTest`
 
@@ -2091,8 +2317,12 @@ This test plan covers:
 | `CacheBehaviorIntegrationTest` | 8 | Implemented | CACHE-001 to CACHE-004 + additional edge cases |
 | `DataIntegrityIntegrationTest` | 20 | Implemented | DATA-001 to DATA-022 + additional edge cases |
 | `PerformanceSanityTest` | 5 | Implemented | Performance sanity checks |
+| `AccountDeletionIntegrationTest` | TBD | Planned | DEL-001 to DEL-091 (50+ scenarios) |
 
 **Total Implemented: 171 tests** (as of 2026-04-19)
+
+**Planned Tests:**
+- Delete Account feature: 50+ test scenarios (see `DELETE_ACCOUNT_TEST_PLAN.md`)
 
 ### Implementation Differences from Plan
 

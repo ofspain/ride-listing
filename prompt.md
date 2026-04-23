@@ -1,167 +1,219 @@
-You are a senior Spring Boot engineer and cloud-native systems architect.
+You are a senior Spring Boot engineer, QA architect, and backend systems designer.
 
-Implement an ultra-lean, production-ready logging and monitoring setup for a Spring Boot application (RideList) running on Kubernetes (AWS EKS).
+The RideList application implements a "Delete Account" feature using SOFT DELETE.
 
-The goal is:
-- Structured logging
-- Request traceability
-- Minimal operational overhead
-- Cloud-native compatibility
+The implementation includes:
 
-DO NOT introduce unnecessary infrastructure like MongoDB or ELK for MVP.
+- User fields:
+  - enabled (boolean)
+  - deletedAt (timestamp)
 
----
+- Global filtering rule:
+  WHERE user.enabled = true AND user.deleted_at IS NULL
 
-# 🧱 LOGGING REQUIREMENTS
-
-## 1. Structured JSON Logging
-
-Use Logback with logstash encoder.
-
-Logs must be JSON formatted and include:
-
-- timestamp
-- log level
-- service name
-- traceId (correlation ID)
-- thread
-- logger
-- message
-- optional context (userId, listingId, etc.)
+- Listings belong to users
+- Listings from deleted users must not appear publicly
+- Favorites are deleted when user deletes account
+- Messages are retained (not deleted)
+- Authentication must be blocked after deletion
 
 ---
 
-## 2. Dependencies
+# 🎯 OBJECTIVE
 
-Add:
+Design a comprehensive, production-grade integration test plan specifically for the "Delete Account" feature.
 
-- spring-boot-starter-logging
-- logstash-logback-encoder
+This plan must ensure:
+- correctness
+- data integrity
+- security enforcement
+- no leakage of deleted users or their data
 
----
-
-## 3. Logback Configuration
-
-Create logback-spring.xml:
-
-- Use LogstashEncoder
-- Output logs to STDOUT (important for Kubernetes)
-- Include MDC fields automatically
+This is NOT unit testing.
 
 ---
 
-## 4. Correlation ID (VERY IMPORTANT)
+# ⚙️ TEST ENVIRONMENT
 
-Implement a request filter:
-
-- Generate a UUID per request
-- Store in MDC as "traceId"
-- Add to response header (X-Trace-Id)
-
-Example:
-
-MDC.put("traceId", UUID.randomUUID().toString());
-
-Ensure:
-- Cleared after request completes
+- Use real PostgreSQL (NO H2)
+- Use Testcontainers for DB
+- Use @SpringBootTest (full context)
+- Mock external dependencies if needed
 
 ---
 
-## 5. Logging Best Practices
+# 🧱 TEST COVERAGE
 
-- Use parameterized logging (no string concatenation)
-- Log key events:
-    - user registration
-    - login attempts
-    - listing creation/update
-    - image upload
-- Log errors with stack trace
+## 1. ACCOUNT DELETION FLOW
 
-DO NOT log:
-- passwords
-- sensitive tokens
+- Successfully delete account
+- Verify:
+  - enabled = false
+  - deletedAt is set
+
+- Attempt deleting already deleted account → expect error
 
 ---
 
-# 🧱 MONITORING REQUIREMENTS
+## 2. AUTHENTICATION BEHAVIOR
 
-## 6. Spring Boot Actuator
+- Deleted user cannot:
+  - login
+  - access protected endpoints
 
-Enable:
-
-/actuator/health
-/actuator/info
-/actuator/metrics
-
-Expose via application.yml:
-
-management:
-endpoints:
-web:
-exposure:
-include: health,info,metrics
+- Existing JWT (if present) should be rejected
 
 ---
 
-## 7. Kubernetes Readiness
+## 3. GLOBAL FILTERING ENFORCEMENT (CRITICAL)
 
-Ensure:
+Verify that:
 
-- /actuator/health used for liveness/readiness probes
-- Logs go to STDOUT (Kubernetes best practice)
+- Deleted users are NOT returned in:
+  - user queries
+  - listing queries
+  - seller APIs
 
----
+Explicitly test:
+- user.enabled = false
+- user.deletedAt != null
 
-## 8. Metrics (Basic)
-
-Expose:
-- HTTP request count
-- error rates
-- JVM metrics
-
-(No Prometheus setup required in MVP, just ensure Actuator works)
+Ensure system behaves as if user does not exist
 
 ---
 
-# 🧱 OPTIONAL (LIGHT ENHANCEMENT)
+## 4. LISTING BEHAVIOR
 
-If simple to add:
+- User creates listings
+- Delete account
 
-- Integrate Micrometer (already included via actuator)
-- Tag metrics with:
-    - endpoint
-    - status code
+Verify:
+- Listings are:
+  - marked as DELETED or UNPUBLISHED
+- Listings do NOT appear in:
+  - public listing APIs
+  - search results
 
 ---
 
-# 🧱 OUTPUT
+## 5. FAVORITES
 
-Generate:
+- User has favorites
+- Delete account
 
-- logback-spring.xml
-- CorrelationIdFilter (OncePerRequestFilter)
-- Sample logging usage in a service class
-- application.yml additions
+Verify:
+- Favorites are removed
+- No orphan records remain
 
-Keep implementation clean, minimal, and production-ready.
+---
+
+## 6. MESSAGES / INQUIRIES
+
+- User has sent or received messages
+
+Verify:
+- Messages still exist after deletion
+- Message integrity is preserved
+- (Optional) sender info handling if anonymized
+
+---
+
+## 7. DATA INTEGRITY
+
+- No foreign key violations
+- No orphaned records:
+  - listings
+  - favorites
+  - images
+
+---
+
+## 8. SECURITY
+
+- User cannot delete another user’s account
+- Only authenticated user can call DELETE /api/v1/account
+
+---
+
+## 9. EDGE CASES
+
+- Delete user with:
+  - no listings
+  - many listings
+  - no favorites
+  - mixed data
+
+- Concurrent deletion requests
+
+---
+
+## 10. CACHE IMPACT (IF CACHE EXISTS)
+
+- After deletion:
+  - cached data should not return deleted user data
+  - cache should be evicted or refreshed
+
+---
+
+# 🧱 TEST STRUCTURE
+
+Define:
+
+- Test class naming conventions
+- Suggested test classes:
+  - AccountDeletionIntegrationTest
+  - ListingVisibilityAfterDeletionTest
+  - AuthAfterDeletionTest
+
+- Use transactional tests where appropriate
+
+---
+
+# 🧪 TEST DATA STRATEGY
+
+- Use builders or fixtures
+- Avoid hardcoded IDs
+- Create reusable setup methods:
+  - createUser()
+  - createListing(user)
+  - createFavorite(user, listing)
+
+---
+
+# 📄 OUTPUT FORMAT
+
+Produce a MARKDOWN document named:
+
+DELETE_ACCOUNT_TEST_PLAN.md
+
+Structure:
+
+1. Overview
+2. Test Environment Setup
+3. Test Scenarios (grouped by feature)
+4. Edge Cases
+5. Data Integrity Checks
+6. Security Validation
+7. Risks & Gaps
 
 ---
 
 # ⚠️ CONSTRAINTS
 
-- DO NOT introduce MongoDB
-- DO NOT introduce ELK stack
-- DO NOT overengineer
-- Keep it Kubernetes-friendly (STDOUT logging)
+- Focus strictly on integration tests
+- Do NOT include unit tests
+- Do NOT include UI tests
+- Keep it MVP-focused but robust
 
 ---
 
 # 🎯 GOAL
 
-Logs should be easily consumable by Kubernetes log collectors (e.g., Fluent Bit → CloudWatch).
+The test plan should ensure that:
 
-System should be debuggable and observable with minimal setup.
-
+- deleted users are completely invisible in the system
+- system integrity is preserved
+- no unintended data exposure occurs
 
 ### Update context
-Update the CLAUDE.md file of this project with this newly added context/functionalities
+Update the TEST_PLAN.md file of this project with this newly added test cases

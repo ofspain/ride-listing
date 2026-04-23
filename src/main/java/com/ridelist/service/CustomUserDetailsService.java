@@ -21,16 +21,28 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        User user = userRepository.findByEmail(email)
+        // Use native query to bypass @Where filter and check for deleted users
+        User user = userRepository.findByEmailIncludingDeleted(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
+
+        // Check if user is deleted or disabled
+        if (!user.isEnabled() || user.getDeletedAt() != null) {
+            throw new UsernameNotFoundException("User account is disabled or deleted");
+        }
 
         return new UserPrincipal(user);
     }
 
     @Transactional(readOnly = true)
     public UserDetails loadUserById(UUID id) {
-        User user = userRepository.findById(id)
+        // Use native query to bypass @Where filter and check for deleted users
+        User user = userRepository.findByIdIncludingDeleted(id)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with id: " + id));
+
+        // Check if user is deleted or disabled
+        if (!user.isEnabled() || user.getDeletedAt() != null) {
+            throw new UsernameNotFoundException("User account is disabled or deleted");
+        }
 
         return new UserPrincipal(user);
     }

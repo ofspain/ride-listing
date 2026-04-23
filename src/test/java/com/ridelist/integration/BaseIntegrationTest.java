@@ -9,7 +9,7 @@ import com.ridelist.dto.response.ApiResponse;
 import com.ridelist.dto.response.AuthResponse;
 import com.ridelist.model.*;
 import com.ridelist.repository.*;
-import org.junit.jupiter.api.BeforeEach;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -87,6 +87,12 @@ public abstract class BaseIntegrationTest {
 
     @Autowired
     protected FavoriteRepository favoriteRepository;
+
+    @Autowired
+    protected ContactRequestRepository contactRequestRepository;
+
+    @Autowired
+    protected EntityManager entityManager;
 
     // ==================== HELPER METHODS ====================
 
@@ -206,5 +212,18 @@ public abstract class BaseIntegrationTest {
         return "Bearer " + token;
     }
 
-    //todo: create/get sample state,axis,area uses lean response: use to set listing etc
+    protected Favorite createTestFavorite(User user, Listing listing) {
+        return favoriteRepository.save(Favorite.builder()
+                .user(user)
+                .listing(listing)
+                .build());
+    }
+
+    protected ContactRequest createTestInquiry(Listing listing, User buyer, String message) {
+        return contactRequestRepository.save(ContactRequest.builder()
+                .listing(listing)
+                .buyer(buyer)
+                .message(message)
+                .build());
+    }
 }
