@@ -70,6 +70,20 @@ public class JwtTokenProvider {
         return false;
     }
 
+    public boolean isTokenExpired(String token) {
+        try {
+            Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token);
+            return false;
+        } catch (ExpiredJwtException ex) {
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
     private SecretKey getSigningKey() {
         byte[] keyBytes = jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);

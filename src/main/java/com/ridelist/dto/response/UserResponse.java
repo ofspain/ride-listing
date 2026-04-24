@@ -1,5 +1,6 @@
 package com.ridelist.dto.response;
 
+import com.ridelist.model.AccountType;
 import com.ridelist.model.Role;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,6 +22,8 @@ public class UserResponse {
     private String lastName;
     private String phoneNumber;
     private String profileImageUrl;
+    private AccountType accountType;
     private Role role;
+    private String state;
     private LocalDateTime createdAt;
 }

@@ -281,7 +281,7 @@ aws:
 - MapStruct mappers - updated with updateEntityFromRequest method
 - Security configuration (JWT)
 - AWS S3 configuration
-- Global exception handling (ResourceNotFoundException, BadRequestException, DuplicateResourceException)
+- Global exception handling (ResourceNotFoundException, BadRequestException, DuplicateResourceException, HttpMessageNotReadableException)
 - **In-memory caching** for reference data (locations, categorization)
 - **MarketplaceListingService** - core listing operations
 
@@ -328,8 +328,19 @@ Location: `service/AuthService.java`
 Handles user authentication:
 - `register(RegisterRequest)` - Register new user with BCrypt password hashing, returns JWT tokens
 - `login(LoginRequest)` - Authenticate user, returns JWT tokens
+- `refreshToken(RefreshTokenRequest)` - Validate refresh token and generate new access token
 
-**Response:** `AuthResponse` containing accessToken, refreshToken, tokenType, expiresIn, and user details.
+**Registration with AccountType:**
+- `accountType` field is optional in `RegisterRequest`
+- If null, defaults to `AccountType.INDIVIDUAL`
+- Valid values: `INDIVIDUAL`, `DEALER`
+
+**Token Refresh:**
+- Validates the refresh token JWT signature and expiration
+- Checks user exists and is not deleted/disabled
+- Returns new access token with fresh expiry
+
+**Response:** `AuthResponse` containing accessToken, refreshToken, tokenType, expiresIn, and user details (including accountType).
 
 ### MessageService
 
@@ -669,10 +680,40 @@ Location: `controller/AuthController.java`
 |--------|----------|-------------|
 | POST | `/api/v1/auth/register` | Register new user |
 | POST | `/api/v1/auth/login` | Login and get JWT tokens |
+| POST | `/api/v1/auth/refresh` | Refresh access token using refresh token |
 
 **Request/Response:**
 - Register: `RegisterRequest` → `AuthResponse`
 - Login: `LoginRequest` → `AuthResponse`
+- Refresh: `RefreshTokenRequest` → `TokenResponse`
+
+**Registration with AccountType:**
+```json
+{
+  "email": "user@example.com",
+  "password": "SecurePass123!",
+  "firstName": "John",
+  "lastName": "Doe",
+  "phoneNumber": "08012345678",
+  "accountType": "DEALER"  // Optional: INDIVIDUAL (default) or DEALER
+}
+```
+
+**Token Refresh Request:**
+```json
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+**Token Refresh Response:**
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+  "tokenType": "Bearer",
+  "expiresIn": 86400000
+}
+```
 
 ### ListingController
 
@@ -743,16 +784,45 @@ Location: `controller/AccountController.java`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| DELETE | `/api/v1/account` | Delete authenticated user's account (soft delete) |
+| GET | `/api/v1/account/me` | Get current user's profile |
+| PUT | `/api/v1/account/me` | Update current user's profile |
+| PUT | `/api/v1/account/me/password` | Change current user's password |
+| DELETE | `/api/v1/account/me` | Delete current user's account (soft delete) |
 
-**Delete Account Response:**
+**Get Profile Response:**
 ```json
 {
-  "success": true,
-  "message": "Account deleted successfully",
-  "timestamp": "2024-01-15T10:30:45.123"
+  "id": "uuid",
+  "email": "user@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
+  "phoneNumber": "08012345678",
+  "accountType": "INDIVIDUAL",
+  "role": "USER",
+  "state": "Lagos",
+  "createdAt": "2024-01-15T10:30:45.123"
 }
 ```
+
+**Update Profile Request:**
+```json
+{
+  "firstName": "string (optional)",
+  "lastName": "string (optional)",
+  "stateId": "UUID (optional)"
+}
+```
+Only provided fields are updated (partial update).
+
+**Change Password Request:**
+```json
+{
+  "currentPassword": "string (required)",
+  "newPassword": "string (required, min 8 chars)",
+  "confirmPassword": "string (required)"
+}
+```
+Returns 400 if currentPassword is wrong or passwords don't match.
 
 **Effects of Account Deletion:**
 - User cannot log in or access the system
@@ -806,6 +876,53 @@ Requires `ROLE_ADMIN`. Uses `@PreAuthorize("hasRole('ADMIN')")`.
 - Slugs auto-generated using `SlugUtil.toSlug(name)`
 - Duplicate names (slugs) throw `DuplicateResourceException` (HTTP 409)
 - Invalid parent IDs throw `ResourceNotFoundException` (HTTP 404)
+
+### AdminCategorizationController (ADMIN ONLY)
+
+Location: `controller/AdminCategorizationController.java`
+
+Base path: `/api/v1/admin/categorization`
+
+Requires `ROLE_ADMIN`. Uses `@PreAuthorize("hasRole('ADMIN')")`.
+
+**Make Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/makes` | Create a new make |
+| PUT | `/makes/{id}` | Update make name |
+| DELETE | `/makes/{id}` | Delete make (cascades to models and years) |
+| GET | `/makes` | Get all makes |
+
+**VehicleModel Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/models` | Create model (requires makeId) |
+| PUT | `/models/{id}` | Update model name |
+| DELETE | `/models/{id}` | Delete model (cascades to years) |
+| GET | `/makes/{makeId}/models` | Get models for a make |
+
+**ModelYear Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/years` | Create year (requires vehicleModelId) |
+| PUT | `/years/{id}` | Update year name |
+| DELETE | `/years/{id}` | Delete year |
+| GET | `/models/{modelId}/years` | Get years for a model |
+
+**Request DTOs:**
+- `CreateMakeRequest` - `{ name }`
+- `CreateVehicleModelRequest` - `{ name, makeId }`
+- `CreateModelYearRequest` - `{ name, vehicleModelId }`
+- `UpdateCategorizationRequest` - `{ name }` (used for all update operations)
+
+**Validation:**
+- Slugs auto-generated using `SlugUtil.toSlug(name)`
+- Duplicate names (slugs) throw `DuplicateResourceException` (HTTP 409)
+- Invalid parent IDs throw `ResourceNotFoundException` (HTTP 404)
+- All write operations invalidate the categorization cache
 
 ### AdminAttributeController (ADMIN ONLY)
 
@@ -1078,10 +1195,55 @@ API documentation is available via Springdoc OpenAPI.
 - Operations sorted by HTTP method
 - Request duration display
 
-## What Needs Implementation
+### UserService
 
-1. **Services**: UserService (profile management, user lookup)
-2. **Controllers**: UserController (profile endpoints)
+Location: `service/UserService.java`
+
+Handles user profile management:
+- `getProfile(UUID userId)` - Get user profile by ID
+- `updateProfile(UUID userId, UpdateProfileRequest)` - Update profile (partial update - only non-null fields)
+- `changePassword(UUID userId, ChangePasswordRequest)` - Change user password
+
+**Update Profile:**
+- Supports partial updates (null fields are ignored)
+- `stateId` is resolved to state name and stored on user
+- Throws `ResourceNotFoundException` if stateId is invalid
+
+**Change Password:**
+- Validates current password matches
+- Validates new password matches confirmation
+- Validates new password meets strength requirements (min 8 chars)
+- Throws `BadRequestException` for validation failures
+
+### CategorizationService
+
+Location: `service/CategorizationService.java`
+
+Admin service for managing vehicle categorization hierarchy (Make → VehicleModel → ModelYear). All write operations invalidate the categorization cache.
+
+**Make Operations:**
+- `createMake(CreateMakeRequest)` - Create make with auto-generated slug
+- `updateMake(UUID, UpdateCategorizationRequest)` - Update make name/slug
+- `deleteMake(UUID)` - Delete make (cascades to models and years)
+- `getAllMakes()` - List all makes
+
+**VehicleModel Operations:**
+- `createModel(CreateVehicleModelRequest)` - Create model under a make
+- `updateModel(UUID, UpdateCategorizationRequest)` - Update model name/slug
+- `deleteModel(UUID)` - Delete model (cascades to years)
+- `getModelsByMake(UUID makeId)` - List models for a make
+
+**ModelYear Operations:**
+- `createYear(CreateModelYearRequest)` - Create year under a model
+- `updateYear(UUID, UpdateCategorizationRequest)` - Update year name/slug
+- `deleteYear(UUID)` - Delete year
+- `getYearsByModel(UUID modelId)` - List years for a model
+
+**Validation:**
+- Slug uniqueness enforced (throws `DuplicateResourceException`)
+- Parent entity existence validated (throws `ResourceNotFoundException`)
+
+**Cache Integration:** All create/update/delete operations call `cache.evictAll()` to invalidate cached categorization data.
 
 ## Build & Run
 
@@ -1128,17 +1290,21 @@ mvn test -Dspring.profiles.active=test
 ```
 src/test/java/com/ridelist/
 └── integration/
-    ├── BaseIntegrationTest.java                    # Base class with Testcontainers setup
-    ├── AuthControllerIntegrationTest.java          # 14 tests
-    ├── ListingControllerIntegrationTest.java       # 26 tests
-    ├── FavoriteControllerIntegrationTest.java      # 15 tests
-    ├── ImageServiceIntegrationTest.java            # 17 tests (uses @MockBean S3Service)
-    ├── MessageControllerIntegrationTest.java       # 16 tests
-    ├── CacheBehaviorIntegrationTest.java           # 8 tests
-    ├── DataIntegrityIntegrationTest.java           # 20 tests
-    ├── AdminAttributeControllerIntegrationTest.java # 22 tests
-    ├── AdminLocationControllerIntegrationTest.java  # 28 tests
-    └── PerformanceSanityTest.java                  # 5 tests
+    ├── BaseIntegrationTest.java                         # Base class with Testcontainers setup
+    ├── AuthControllerIntegrationTest.java               # 14 tests
+    ├── ListingControllerIntegrationTest.java            # 26 tests
+    ├── FavoriteControllerIntegrationTest.java           # 15 tests
+    ├── ImageServiceIntegrationTest.java                 # 17 tests (uses @MockBean S3Service)
+    ├── MessageControllerIntegrationTest.java            # 16 tests
+    ├── CacheBehaviorIntegrationTest.java                # 8 tests
+    ├── DataIntegrityIntegrationTest.java                # 20 tests
+    ├── AdminAttributeControllerIntegrationTest.java     # 22 tests
+    ├── AdminLocationControllerIntegrationTest.java      # 28 tests
+    ├── PerformanceSanityTest.java                       # 5 tests
+    ├── RegistrationAccountTypeIntegrationTest.java      # 7 tests (GAP 1)
+    ├── ProfileEndpointsIntegrationTest.java             # 19 tests (GAP 2)
+    ├── AdminCategorizationControllerIntegrationTest.java # 21 tests (GAP 3)
+    └── TokenRefreshIntegrationTest.java                 # 12 tests (GAP 4)
 ```
 
 ### Base Integration Test
@@ -1176,8 +1342,12 @@ All integration tests extend `BaseIntegrationTest` which provides:
 | AdminAttributeController | 22 | CRUD attributes, public endpoints, auth/access control |
 | AdminLocationController | 28 | State/Axis/Area CRUD, cascades, public lookup |
 | PerformanceSanity | 5 | Response time sanity checks, pagination, caching |
+| RegistrationAccountType | 7 | AccountType in registration, defaults, validation (GAP 1) |
+| ProfileEndpoints | 19 | Get/Update profile, change password, delete account (GAP 2) |
+| AdminCategorizationController | 21 | Make/Model/Year CRUD, cascades, cache invalidation (GAP 3) |
+| TokenRefresh | 12 | Refresh token validation, new access token, error cases (GAP 4) |
 
-**Total: 171 integration tests**
+**Total: 230 integration tests**
 
 ### Key Testing Notes
 

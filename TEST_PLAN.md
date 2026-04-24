@@ -1978,6 +1978,238 @@ void getListings_noMatches_returnsEmptyList() throws Exception {
 
 ---
 
+### 4.11 Registration AccountType (GAP 1)
+
+**Test Class:** `RegistrationAccountTypeIntegrationTest`
+
+Tests the optional `accountType` field in registration and its propagation to responses.
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| REG-AT-001 | Register without accountType | No accountType field | 201 Created, accountType=INDIVIDUAL |
+| REG-AT-002 | Register with accountType=INDIVIDUAL | accountType=INDIVIDUAL | 201 Created, accountType=INDIVIDUAL |
+| REG-AT-003 | Register with accountType=DEALER | accountType=DEALER | 201 Created, accountType=DEALER |
+| REG-AT-004 | AuthResponse contains accountType | Registration response | user.accountType present |
+| REG-AT-005 | UserResponse contains accountType after login | Login response | user.accountType present |
+| REG-AT-006 | Invalid accountType value | accountType=INVALID | 400 Bad Request |
+| REG-AT-007 | Null accountType is accepted | accountType=null | 201 Created, defaults to INDIVIDUAL |
+
+```java
+@Test
+void register_withDealerAccountType_setsDealer() throws Exception {
+    RegisterRequest request = RegisterRequest.builder()
+            .email("dealer@test.com")
+            .password("SecurePass123!")
+            .firstName("Dealer")
+            .lastName("User")
+            .accountType(AccountType.DEALER)
+            .build();
+
+    mockMvc.perform(post("/api/v1/auth/register")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.data.user.accountType").value("DEALER"));
+}
+```
+
+---
+
+### 4.12 Profile Endpoints (GAP 2)
+
+**Test Class:** `ProfileEndpointsIntegrationTest`
+
+Tests the profile management endpoints at `/api/v1/account/me`.
+
+#### GET /api/v1/account/me
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| PROF-001 | Get profile authenticated | Valid token | 200 OK, user data returned |
+| PROF-002 | Get profile unauthenticated | No token | 401 Unauthorized |
+| PROF-003 | Get profile returns state | User with state | state field populated |
+
+#### PUT /api/v1/account/me
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| PROF-010 | Update firstName only | firstName field | 200 OK, firstName updated |
+| PROF-011 | Update lastName only | lastName field | 200 OK, lastName updated |
+| PROF-012 | Update with stateId | Valid stateId | 200 OK, state name set |
+| PROF-013 | Update with invalid stateId | Non-existent UUID | 404 Not Found |
+| PROF-014 | Update all fields | All optional fields | 200 OK, all fields updated |
+| PROF-015 | Update unauthenticated | No token | 401 Unauthorized |
+| PROF-016 | Null fields ignored | Empty request body | 200 OK, existing values kept |
+
+#### PUT /api/v1/account/me/password
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| PROF-020 | Change password valid | Correct current + new | 200 OK, password changed |
+| PROF-021 | Wrong current password | Incorrect current | 400 Bad Request |
+| PROF-022 | Passwords don't match | newPassword != confirm | 400 Bad Request |
+| PROF-023 | Weak new password | <8 characters | 400 Bad Request |
+| PROF-024 | Unauthenticated | No token | 401 Unauthorized |
+| PROF-025 | Old password no longer works | After change | 401 on login with old |
+
+#### DELETE /api/v1/account/me
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| PROF-030 | Delete account | Valid token | 200 OK, account deleted |
+| PROF-031 | Delete unauthenticated | No token | 401 Unauthorized |
+| PROF-032 | Deleted user cannot login | After deletion | 401 on login attempt |
+
+```java
+@Test
+void updateProfile_withStateId_setsStateName() throws Exception {
+    String token = registerAndGetToken("user@test.com", "Password123!");
+    State state = createTestState("Lagos");
+
+    UpdateProfileRequest request = UpdateProfileRequest.builder()
+            .stateId(state.getId())
+            .build();
+
+    mockMvc.perform(put("/api/v1/account/me")
+                    .header("Authorization", authHeader(token))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.state").value("Lagos"));
+}
+```
+
+---
+
+### 4.13 Admin Categorization Endpoints (GAP 3)
+
+**Test Class:** `AdminCategorizationControllerIntegrationTest`
+
+Tests admin CRUD for vehicle categorization hierarchy: Make → VehicleModel → ModelYear.
+
+#### Make CRUD
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| CAT-001 | Admin creates make | Valid name | 201 Created, slug generated |
+| CAT-002 | Create duplicate make | Existing name | 409 Conflict |
+| CAT-003 | Non-admin creates make | USER role | 403 Forbidden |
+| CAT-004 | Admin updates make | New name | 200 OK, name/slug updated |
+| CAT-005 | Admin deletes make | Valid ID | 200 OK, make deleted |
+| CAT-006 | Delete make cascades | Make with models/years | All children deleted |
+| CAT-007 | Get all makes | - | 200 OK, list returned |
+| CAT-008 | Delete non-existent make | Random UUID | 404 Not Found |
+
+#### VehicleModel CRUD
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| CAT-010 | Admin creates model | Valid makeId | 201 Created |
+| CAT-011 | Create model invalid makeId | Non-existent makeId | 404 Not Found |
+| CAT-012 | Admin updates model | New name | 200 OK, updated |
+| CAT-013 | Delete model cascades to years | Model with years | Years deleted |
+| CAT-014 | Get models by make | Valid makeId | 200 OK, filtered list |
+| CAT-015 | Get models non-existent make | Random UUID | 404 Not Found |
+
+#### ModelYear CRUD
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| CAT-020 | Admin creates year | Valid vehicleModelId | 201 Created |
+| CAT-021 | Create year invalid modelId | Non-existent modelId | 404 Not Found |
+| CAT-022 | Admin updates year | New name | 200 OK, updated |
+| CAT-023 | Admin deletes year | Valid ID | 200 OK, year deleted |
+| CAT-024 | Get years by model | Valid modelId | 200 OK, filtered list |
+| CAT-025 | Get years non-existent model | Random UUID | 404 Not Found |
+
+#### Cache Invalidation
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| CAT-030 | Create make invalidates cache | New make | Lookup reflects change |
+
+```java
+@Test
+void deleteMake_cascadesToModelsAndYears() throws Exception {
+    Make make = createTestMake("CascadeTest");
+    VehicleModel model = createTestVehicleModel("Model1", make);
+    ModelYear year = createTestModelYear("2024", model);
+
+    mockMvc.perform(delete("/api/v1/admin/categorization/makes/" + make.getId())
+                    .header("Authorization", authHeader(adminToken)))
+            .andExpect(status().isOk());
+
+    entityManager.clear();
+    assertThat(vehicleModelRepository.findById(model.getId())).isEmpty();
+    assertThat(modelYearRepository.findById(year.getId())).isEmpty();
+}
+```
+
+---
+
+### 4.14 Token Refresh (GAP 4)
+
+**Test Class:** `TokenRefreshIntegrationTest`
+
+Tests the token refresh endpoint at `POST /api/v1/auth/refresh`.
+
+#### Valid Refresh Token
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| REFRESH-001 | Valid refresh token | Valid JWT | 200 OK, new access token |
+| REFRESH-005 | New token works | Use new access token | Can access protected endpoints |
+| REFRESH-006 | Endpoint is public | No Authorization header | 200 OK (with valid body) |
+
+#### Invalid Refresh Token
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| REFRESH-002 | Invalid token | Invalid JWT string | 401 Unauthorized |
+| REFRESH-002b | Malformed JWT | "not-a-jwt" | 401 Unauthorized |
+| REFRESH-002c | Empty token | "" | 400 Bad Request |
+| REFRESH-002d | Null token | null | 400 Bad Request |
+| REFRESH-002e | Access token as refresh | Access token | May work (same signing key) |
+
+#### Deleted/Disabled User
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| REFRESH-004 | Deleted user's token | Valid token, deleted user | 401 Unauthorized |
+| REFRESH-004b | Disabled user's token | Valid token, disabled user | 401 Unauthorized |
+
+#### Response Format
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| REFRESH-007 | Response format | Valid request | accessToken, tokenType, expiresIn |
+| REFRESH-008 | Token is unique | Multiple refreshes | Different tokens each time |
+
+```java
+@Test
+void newAccessToken_worksForProtectedEndpoints() throws Exception {
+    String refreshToken = registerAndGetRefreshToken("user@test.com", "Password123!");
+
+    RefreshTokenRequest request = RefreshTokenRequest.builder()
+            .refreshToken(refreshToken)
+            .build();
+
+    MvcResult result = mockMvc.perform(post("/api/v1/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    String newAccessToken = extractAccessToken(result);
+
+    mockMvc.perform(get("/api/v1/account/listings")
+                    .header("Authorization", "Bearer " + newAccessToken))
+            .andExpect(status().isOk());
+}
+```
+
+---
+
 ## 5. Edge Cases
 
 ### 5.1 Boundary Conditions
@@ -2126,8 +2358,6 @@ class PerformanceSanityTest extends BaseIntegrationTest {
 
 | Area | Gap | Recommendation |
 |------|-----|----------------|
-| Token refresh | Not implemented | Add when token refresh endpoint exists |
-| Admin categorization | Partially covered | Add full CRUD tests when service implemented |
 | Full-text search | Not implemented | Add when search feature added |
 | Rate limiting | Not tested | Add when rate limiting implemented |
 
@@ -2283,7 +2513,7 @@ mvn test -Dgroups=critical-path
 
 This test plan covers:
 
-- **85+ test scenarios** across 10 feature areas
+- **140+ test scenarios** across 14 feature areas
 - **Full authentication & authorization** testing
 - **Critical path coverage** for listing lifecycle
 - **Data integrity validation** at database level
@@ -2318,8 +2548,12 @@ This test plan covers:
 | `DataIntegrityIntegrationTest` | 20 | Implemented | DATA-001 to DATA-022 + additional edge cases |
 | `PerformanceSanityTest` | 5 | Implemented | Performance sanity checks |
 | `AccountDeletionIntegrationTest` | TBD | Planned | DEL-001 to DEL-091 (50+ scenarios) |
+| `RegistrationAccountTypeIntegrationTest` | 7 | Implemented | REG-AT-001 to REG-AT-007 (GAP 1) |
+| `ProfileEndpointsIntegrationTest` | 19 | Implemented | PROF-001 to PROF-032 (GAP 2) |
+| `AdminCategorizationControllerIntegrationTest` | 21 | Implemented | CAT-001 to CAT-030 (GAP 3) |
+| `TokenRefreshIntegrationTest` | 12 | Implemented | REFRESH-001 to REFRESH-008 (GAP 4) |
 
-**Total Implemented: 171 tests** (as of 2026-04-19)
+**Total Implemented: 230 tests** (as of 2026-04-24)
 
 **Planned Tests:**
 - Delete Account feature: 50+ test scenarios (see `DELETE_ACCOUNT_TEST_PLAN.md`)

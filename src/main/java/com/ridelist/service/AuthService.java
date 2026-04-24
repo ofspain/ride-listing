@@ -2,10 +2,14 @@ package com.ridelist.service;
 
 import com.ridelist.dto.mapper.UserMapper;
 import com.ridelist.dto.request.LoginRequest;
+import com.ridelist.dto.request.RefreshTokenRequest;
 import com.ridelist.dto.request.RegisterRequest;
 import com.ridelist.dto.response.AuthResponse;
+import com.ridelist.dto.response.TokenResponse;
 import com.ridelist.exception.BadRequestException;
 import com.ridelist.exception.DuplicateResourceException;
+import com.ridelist.exception.UnauthorizedException;
+import com.ridelist.model.AccountType;
 import com.ridelist.model.User;
 import com.ridelist.repository.UserRepository;
 import com.ridelist.security.JwtTokenProvider;
@@ -37,6 +41,11 @@ public class AuthService {
 
         User user = userMapper.toEntity(request);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
+
+        AccountType type = request.getAccountType() != null
+                ? request.getAccountType()
+                : AccountType.INDIVIDUAL;
+        user.setAccountType(type);
 
         User savedUser = userRepository.save(user);
         log.info("User registered successfully with id: {}", savedUser.getId());
@@ -76,6 +85,41 @@ public class AuthService {
                 .tokenType("Bearer")
                 .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .user(userMapper.toResponse(user))
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public TokenResponse refreshToken(RefreshTokenRequest request) {
+        log.info("Processing refresh token request");
+
+        String refreshToken = request.getRefreshToken();
+
+        if (jwtTokenProvider.isTokenExpired(refreshToken)) {
+            throw new UnauthorizedException("Refresh token expired. Please log in again.");
+        }
+
+        if (!jwtTokenProvider.validateToken(refreshToken)) {
+            throw new UnauthorizedException("Invalid refresh token");
+        }
+
+        java.util.UUID userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
+
+        User user = userRepository.findByIdIncludingDeleted(userId)
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+
+        if (user.getDeletedAt() != null || !user.isEnabled()) {
+            throw new UnauthorizedException("Account is disabled or deleted");
+        }
+
+        UserPrincipal userPrincipal = new UserPrincipal(user);
+        String newAccessToken = jwtTokenProvider.generateAccessToken(userPrincipal);
+
+        log.info("Generated new access token for user: {}", userId);
+
+        return TokenResponse.builder()
+                .accessToken(newAccessToken)
+                .tokenType("Bearer")
+                .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .build();
     }
 }

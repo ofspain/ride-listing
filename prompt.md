@@ -1,219 +1,232 @@
-You are a senior Spring Boot engineer, QA architect, and backend systems designer.
+You are a senior spring boot engineer working on a Spring Boot 3.2 REST API called
+RideList. Four gaps have been identified during
+frontend integration analysis. Fix all four.
 
-The RideList application implements a "Delete Account" feature using SOFT DELETE.
-
-The implementation includes:
-
-- User fields:
-  - enabled (boolean)
-  - deletedAt (timestamp)
-
-- Global filtering rule:
-  WHERE user.enabled = true AND user.deleted_at IS NULL
-
-- Listings belong to users
-- Listings from deleted users must not appear publicly
-- Favorites are deleted when user deletes account
-- Messages are retained (not deleted)
-- Authentication must be blocked after deletion
+Read the existing codebase thoroughly before making
+any changes. Do not break existing functionality.
 
 ---
 
-# 🎯 OBJECTIVE
+GAP 1 — Registration accountType + auto-upgrade flow
 
-Design a comprehensive, production-grade integration test plan specifically for the "Delete Account" feature.
+CURRENT BEHAVIOR
+RegisterRequest does not accept accountType. All new
+users default to INDIVIDUAL. Auto-upgrade to DEALER
+occurs when a user posts their first listing.
 
-This plan must ensure:
-- correctness
-- data integrity
-- security enforcement
-- no leakage of deleted users or their data
+REQUIRED CHANGES
 
-This is NOT unit testing.
+1. Add optional accountType field to RegisterRequest:
 
----
+   @JsonProperty("accountType")
+   private AccountType accountType;
 
-# ⚙️ TEST ENVIRONMENT
+  - Field is optional — if null, default to INDIVIDUAL
+  - If provided, set the user's AccountType to that
+    value on registration
+  - Valid values: INDIVIDUAL, DEALER
+  - Invalid values should return 400 Bad Request
 
-- Use real PostgreSQL (NO H2)
-- Use Testcontainers for DB
-- Use @SpringBootTest (full context)
-- Mock external dependencies if needed
+2. Keep the existing auto-upgrade behavior intact:
+  - If a user registered as INDIVIDUAL and posts
+    their first listing, upgrade to DEALER as before
+  - If a user registered as DEALER, no change needed
 
----
+3. Update AuthService.register() accordingly:
 
-# 🧱 TEST COVERAGE
+   AccountType type = request.getAccountType() != null
+   ? request.getAccountType()
+   : AccountType.INDIVIDUAL;
+   user.setAccountType(type);
 
-## 1. ACCOUNT DELETION FLOW
+4. Add accountType to AuthResponse and UserResponse
+   so the frontend receives it after login/register.
+   Confirm it is already present — if not, add it.
 
-- Successfully delete account
-- Verify:
-  - enabled = false
-  - deletedAt is set
-
-- Attempt deleting already deleted account → expect error
-
----
-
-## 2. AUTHENTICATION BEHAVIOR
-
-- Deleted user cannot:
-  - login
-  - access protected endpoints
-
-- Existing JWT (if present) should be rejected
+5. Add a migration if the users table needs any
+   schema change (it likely does not since
+   account_type column already exists).
 
 ---
 
-## 3. GLOBAL FILTERING ENFORCEMENT (CRITICAL)
+GAP 2 — Profile update endpoint
 
-Verify that:
+Add the following endpoints to a new or existing
+UserController at base path /api/v1/account.
 
-- Deleted users are NOT returned in:
-  - user queries
-  - listing queries
-  - seller APIs
+GET /api/v1/account/me
+- Returns the currently authenticated user's profile
+- Auth: required (any authenticated user)
+- Response: UserResponse (id, firstName, lastName,
+  email, accountType, role, state, createdAt)
 
-Explicitly test:
-- user.enabled = false
-- user.deletedAt != null
+PUT /api/v1/account/me
+- Updates the authenticated user's profile
+- Auth: required
+- Request body: UpdateProfileRequest
+  {
+  "firstName": "string (optional)",
+  "lastName": "string (optional)",  
+  "stateId": "UUID (optional)"
+  }
+- Only updates fields that are provided (partial
+  update — ignore null fields)
+- Response: updated UserResponse
 
-Ensure system behaves as if user does not exist
+PUT /api/v1/account/me/password
+- Changes the authenticated user's password
+- Auth: required
+- Request body: ChangePasswordRequest
+  {
+  "currentPassword": "string (required)",
+  "newPassword": "string (required, min 8 chars)",
+  "confirmPassword": "string (required)"
+  }
+- Validate currentPassword matches stored BCrypt hash
+- Validate newPassword and confirmPassword match
+- Return 400 if currentPassword is wrong
+- Return 400 if passwords do not match
+- Response: ApiResponse.success("Password updated
+  successfully")
 
----
+DELETE /api/v1/account/me
+- Permanently deletes the authenticated user's account
+- Auth: required
+- Soft or hard delete — match existing pattern in
+  the codebase
+- Also deletes or marks as DELETED all listings
+  owned by this user
+- Response: ApiResponse.success("Account deleted")
 
-## 4. LISTING BEHAVIOR
+Create UpdateProfileRequest, ChangePasswordRequest
+DTOs with Jakarta validation annotations.
+Create UserService if it does not exist with:
+- getProfile(UUID userId)
+- updateProfile(UUID userId, UpdateProfileRequest)
+- changePassword(UUID userId, ChangePasswordRequest)
+- deleteAccount(UUID userId)
 
-- User creates listings
-- Delete account
-
-Verify:
-- Listings are:
-  - marked as DELETED or UNPUBLISHED
-- Listings do NOT appear in:
-  - public listing APIs
-  - search results
-
----
-
-## 5. FAVORITES
-
-- User has favorites
-- Delete account
-
-Verify:
-- Favorites are removed
-- No orphan records remain
-
----
-
-## 6. MESSAGES / INQUIRIES
-
-- User has sent or received messages
-
-Verify:
-- Messages still exist after deletion
-- Message integrity is preserved
-- (Optional) sender info handling if anonymized
-
----
-
-## 7. DATA INTEGRITY
-
-- No foreign key violations
-- No orphaned records:
-  - listings
-  - favorites
-  - images
-
----
-
-## 8. SECURITY
-
-- User cannot delete another user’s account
-- Only authenticated user can call DELETE /api/v1/account
+Add these endpoints to SecurityConfig as authenticated
+(not public, not admin-only).
 
 ---
 
-## 9. EDGE CASES
+GAP 3 — Admin categorization endpoints
 
-- Delete user with:
-  - no listings
-  - many listings
-  - no favorites
-  - mixed data
+The admin panel manages Make → VehicleModel → ModelYear
+hierarchy. These CRUD endpoints are missing entirely.
 
-- Concurrent deletion requests
+Add to a new AdminCategorizationController at base
+path /api/v1/admin/categorization.
+Require ROLE_ADMIN on all endpoints.
+Follow the exact same pattern as the existing
+AdminLocationController.
 
----
+MAKE ENDPOINTS
+POST   /makes           — Create make
+PUT    /makes/{id}      — Update make name
+DELETE /makes/{id}      — Delete make (cascade to
+models and years)
+GET    /makes           — Get all makes
 
-## 10. CACHE IMPACT (IF CACHE EXISTS)
+VEHICLE MODEL ENDPOINTS
+POST   /models          — Create model (requires makeId)
+PUT    /models/{id}     — Update model name
+DELETE /models/{id}     — Delete model (cascade to years)
+GET    /makes/{makeId}/models — Get models for a make
 
-- After deletion:
-  - cached data should not return deleted user data
-  - cache should be evicted or refreshed
+MODEL YEAR ENDPOINTS
+POST   /years           — Create year (requires modelId)
+PUT    /years/{id}      — Update year name
+DELETE /years/{id}      — Delete year
+GET    /models/{modelId}/years — Get years for a model
 
----
+Request DTOs (follow same pattern as location DTOs):
+- CreateMakeRequest        — { name }
+- CreateVehicleModelRequest — { name, makeId }
+- CreateModelYearRequest   — { name, modelYearId }
+- UpdateCategorizationRequest — { name }
 
-# 🧱 TEST STRUCTURE
+Validation:
+- Slug uniqueness enforced (DuplicateResourceException)
+- Parent entity must exist (ResourceNotFoundException)
+- Delete cascade warns if listings reference this
+  make/model/year — do not block delete, just cascade
 
-Define:
+Cache invalidation:
+- All write operations must call cache.evictAll()
+  exactly as LocationService does
+- This ensures lookup endpoints reflect changes
+  immediately
 
-- Test class naming conventions
-- Suggested test classes:
-  - AccountDeletionIntegrationTest
-  - ListingVisibilityAfterDeletionTest
-  - AuthAfterDeletionTest
-
-- Use transactional tests where appropriate
-
----
-
-# 🧪 TEST DATA STRATEGY
-
-- Use builders or fixtures
-- Avoid hardcoded IDs
-- Create reusable setup methods:
-  - createUser()
-  - createListing(user)
-  - createFavorite(user, listing)
-
----
-
-# 📄 OUTPUT FORMAT
-
-Produce a MARKDOWN document named:
-
-DELETE_ACCOUNT_TEST_PLAN.md
-
-Structure:
-
-1. Overview
-2. Test Environment Setup
-3. Test Scenarios (grouped by feature)
-4. Edge Cases
-5. Data Integrity Checks
-6. Security Validation
-7. Risks & Gaps
+Create CategorizationService if it does not exist.
+If it already exists, extend it with these methods.
 
 ---
 
-# ⚠️ CONSTRAINTS
+GAP 4 — Token refresh endpoint
 
-- Focus strictly on integration tests
-- Do NOT include unit tests
-- Do NOT include UI tests
-- Keep it MVP-focused but robust
+Add a token refresh endpoint to AuthController.
+
+POST /api/v1/auth/refresh
+- Public endpoint (no Bearer token required)
+- Request body: RefreshTokenRequest
+  {
+  "refreshToken": "string (required)"
+  }
+- Validate the refreshToken:
+  - Must be a valid JWT signed with the same secret
+  - Must not be expired
+  - Extract userId from claims
+  - Load user from database to confirm account exists
+- On success: generate a new accessToken and return:
+  {
+  "accessToken": "string",
+  "tokenType": "Bearer",
+  "expiresIn": 86400
+  }
+- On failure:
+  - Invalid token: 401 Unauthorized
+  - Expired token: 401 Unauthorized with message
+    "Refresh token expired. Please log in again."
+  - User not found: 401 Unauthorized
+
+Generate refresh token in AuthService.register()
+and AuthService.login() if not already doing so.
+Refresh token should have a longer expiry than
+access token — 7 days recommended.
+
+Add RefreshTokenRequest DTO with validation.
+Add the endpoint to SecurityConfig as public
+(same as /auth/register and /auth/login).
 
 ---
 
-# 🎯 GOAL
+AFTER ALL CHANGES
 
-The test plan should ensure that:
+1. Add a Flyway migration if any schema changes
+   were made (profile fields, token fields, etc.)
 
-- deleted users are completely invisible in the system
-- system integrity is preserved
-- no unintended data exposure occurs
+2. Confirm all four new/updated endpoint groups
+   are covered by the existing GlobalExceptionHandler
+
+3. Add the new endpoints to SecurityConfig in the
+   correct access tier:
+  - /api/v1/auth/refresh → public
+  - /api/v1/account/me → authenticated
+  - /api/v1/account/me/password → authenticated
+  - /api/v1/account/me (DELETE) → authenticated
+  - /api/v1/admin/categorization/** → ROLE_ADMIN
+
+4. Add OpenAPI/Swagger annotations to all new
+   endpoints so the spec stays current
+
+5. After completing all changes, provide a summary:
+  - Files created
+  - Files modified
+  - Migrations added
+  - Any decisions made where the spec was ambiguous
+
 
 ### Update context
-Update the TEST_PLAN.md file of this project with this newly added test cases
+Update the CLAUDE.md file of this project with this newly added context/functionalities
