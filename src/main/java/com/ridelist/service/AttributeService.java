@@ -40,7 +40,9 @@ public class AttributeService {
         AttributeDefinition attribute = AttributeDefinition.builder()
                 .name(request.getName())
                 .slug(slug)
-                .listingType(request.getListingType())
+                .listingTypes(request.getListingTypes())
+                .iconUrl(request.getIconUrl())
+                .acceptableValues(request.getAcceptableValues())
                 .filterable(request.getFilterable() != null ? request.getFilterable() : true)
                 .required(request.getRequired() != null ? request.getRequired() : false)
                 .active(true)
@@ -66,6 +68,19 @@ public class AttributeService {
             }
             attribute.setName(request.getName());
             attribute.setSlug(newSlug);
+        }
+
+        if (request.getListingTypes() != null && !request.getListingTypes().isEmpty()) {
+            attribute.setListingTypes(request.getListingTypes());
+        }
+
+        if (request.getIconUrl() != null) {
+            attribute.setIconUrl(request.getIconUrl());
+        }
+
+        if (request.getAcceptableValues() != null) {
+            attribute.getAcceptableValues().clear();
+            attribute.getAcceptableValues().addAll(request.getAcceptableValues());
         }
 
         if (request.getFilterable() != null) {

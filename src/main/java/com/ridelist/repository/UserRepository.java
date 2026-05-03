@@ -2,16 +2,21 @@ package com.ridelist.repository;
 
 import com.ridelist.model.AccountType;
 import com.ridelist.model.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface UserRepository extends JpaRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificationExecutor<User> {
 
     Optional<User> findByEmail(String email);
 
@@ -34,4 +39,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     @Query(value = "SELECT * FROM users WHERE id = :id", nativeQuery = true)
     Optional<User> findByIdIncludingDeleted(@Param("id") UUID id);
+
+    @Query("SELECT COUNT(u) FROM User u WHERE u.createdAt >= :since")
+    long countByCreatedAtAfter(@Param("since") LocalDateTime since);
+
+    List<User> findTop10ByOrderByCreatedAtDesc();
 }

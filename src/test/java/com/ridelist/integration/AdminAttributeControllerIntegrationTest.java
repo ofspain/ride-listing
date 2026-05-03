@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -50,11 +51,13 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
     class CreateAttributeTests {
 
         @Test
-        @DisplayName("ATTR-001: Admin creates attribute - returns 201 Created")
+        @DisplayName("ATTR-001: Admin creates attribute with multiple listing types - returns 201 Created")
         void adminCreatesAttribute_ReturnsCreated() throws Exception {
             AttributeCreateRequest request = AttributeCreateRequest.builder()
                     .name("Engine Type")
-                    .listingType(ListingType.VEHICLE)
+                    .listingTypes(Set.of(ListingType.VEHICLE))
+                    .iconUrl("https://cdn.ridelist.ng/icons/engine.svg")
+                    .acceptableValues(List.of("150cc", "200cc", "250cc", "350cc", "400cc+"))
                     .filterable(true)
                     .required(false)
                     .build();
@@ -67,7 +70,11 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.name").value("Engine Type"))
                     .andExpect(jsonPath("$.data.slug").value("engine-type"))
-                    .andExpect(jsonPath("$.data.listingType").value("VEHICLE"))
+                    .andExpect(jsonPath("$.data.listingTypes").isArray())
+                    .andExpect(jsonPath("$.data.listingTypes[0]").value("VEHICLE"))
+                    .andExpect(jsonPath("$.data.iconUrl").value("https://cdn.ridelist.ng/icons/engine.svg"))
+                    .andExpect(jsonPath("$.data.acceptableValues").isArray())
+                    .andExpect(jsonPath("$.data.acceptableValues.length()").value(5))
                     .andExpect(jsonPath("$.data.filterable").value(true))
                     .andExpect(jsonPath("$.data.required").value(false))
                     .andExpect(jsonPath("$.data.active").value(true))
@@ -78,6 +85,25 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
                     new TypeReference<>() {});
 
             assertThat(response.getData().getId()).isNotNull();
+            assertThat(response.getData().getAcceptableValues()).containsExactly("150cc", "200cc", "250cc", "350cc", "400cc+");
+        }
+
+        @Test
+        @DisplayName("ATTR-001c: Create attribute with multiple listing types (VEHICLE and PART)")
+        void createAttributeWithMultipleListingTypes_ReturnsCreated() throws Exception {
+            AttributeCreateRequest request = AttributeCreateRequest.builder()
+                    .name("Brand")
+                    .listingTypes(Set.of(ListingType.VEHICLE, ListingType.PART))
+                    .acceptableValues(List.of("Honda", "TVS", "Bajaj", "Other"))
+                    .filterable(true)
+                    .build();
+
+            mockMvc.perform(post("/api/v1/admin/attributes")
+                            .header("Authorization", authHeader(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.data.listingTypes.length()").value(2));
         }
 
         @Test
@@ -85,7 +111,8 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
         void createAttributeForPart_ReturnsCreated() throws Exception {
             AttributeCreateRequest request = AttributeCreateRequest.builder()
                     .name("Compatibility")
-                    .listingType(ListingType.PART)
+                    .listingTypes(Set.of(ListingType.PART))
+                    .acceptableValues(List.of("Honda", "TVS", "Universal"))
                     .filterable(true)
                     .required(true)
                     .build();
@@ -95,7 +122,7 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.data.listingType").value("PART"))
+                    .andExpect(jsonPath("$.data.listingTypes[0]").value("PART"))
                     .andExpect(jsonPath("$.data.required").value(true));
         }
 
@@ -105,7 +132,8 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
             // First create
             AttributeCreateRequest request = AttributeCreateRequest.builder()
                     .name("Engine Type")
-                    .listingType(ListingType.VEHICLE)
+                    .listingTypes(Set.of(ListingType.VEHICLE))
+                    .acceptableValues(List.of("150cc", "200cc"))
                     .build();
 
             mockMvc.perform(post("/api/v1/admin/attributes")
@@ -127,7 +155,8 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
         @DisplayName("Create attribute without name - returns 400 Bad Request")
         void createAttributeWithoutName_ReturnsBadRequest() throws Exception {
             AttributeCreateRequest request = AttributeCreateRequest.builder()
-                    .listingType(ListingType.VEHICLE)
+                    .listingTypes(Set.of(ListingType.VEHICLE))
+                    .acceptableValues(List.of("Value1"))
                     .build();
 
             mockMvc.perform(post("/api/v1/admin/attributes")
@@ -138,14 +167,46 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("Create attribute without listing type - returns 400 Bad Request")
+        @DisplayName("Create attribute without listing types - returns 400 Bad Request")
         void createAttributeWithoutListingType_ReturnsBadRequest() throws Exception {
-            String json = "{\"name\":\"Test Attribute\"}";
+            String json = "{\"name\":\"Test Attribute\", \"acceptableValues\":[\"Value1\"]}";
 
             mockMvc.perform(post("/api/v1/admin/attributes")
                             .header("Authorization", authHeader(adminToken))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Create attribute without acceptable values - returns 400 Bad Request")
+        void createAttributeWithoutAcceptableValues_ReturnsBadRequest() throws Exception {
+            AttributeCreateRequest request = AttributeCreateRequest.builder()
+                    .name("Engine Type")
+                    .listingTypes(Set.of(ListingType.VEHICLE))
+                    .build();
+
+            mockMvc.perform(post("/api/v1/admin/attributes")
+                            .header("Authorization", authHeader(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Create attribute with invalid icon URL - returns 400 Bad Request")
+        void createAttributeWithInvalidIconUrl_ReturnsBadRequest() throws Exception {
+            AttributeCreateRequest request = AttributeCreateRequest.builder()
+                    .name("Engine Type")
+                    .listingTypes(Set.of(ListingType.VEHICLE))
+                    .iconUrl("not-a-valid-url")
+                    .acceptableValues(List.of("150cc", "200cc"))
+                    .build();
+
+            mockMvc.perform(post("/api/v1/admin/attributes")
+                            .header("Authorization", authHeader(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest());
         }
 
@@ -156,7 +217,8 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
 
             AttributeCreateRequest request = AttributeCreateRequest.builder()
                     .name("Engine Type")
-                    .listingType(ListingType.VEHICLE)
+                    .listingTypes(Set.of(ListingType.VEHICLE))
+                    .acceptableValues(List.of("150cc", "200cc"))
                     .build();
 
             mockMvc.perform(post("/api/v1/admin/attributes")
@@ -260,6 +322,60 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
                     .andExpect(jsonPath("$.data.filterable").value(false))
                     .andExpect(jsonPath("$.data.required").value(true));
         }
+
+        @Test
+        @DisplayName("Update acceptable values - replaces entire list")
+        void updateAcceptableValues_ReplacesEntireList() throws Exception {
+            AttributeDefinition attr = createTestAttribute("Engine Type", ListingType.VEHICLE, true,
+                    List.of("150cc", "200cc", "250cc"));
+
+            AttributeUpdateRequest request = AttributeUpdateRequest.builder()
+                    .acceptableValues(List.of("100cc", "125cc", "150cc", "200cc"))
+                    .build();
+
+            mockMvc.perform(put("/api/v1/admin/attributes/{id}", attr.getId())
+                            .header("Authorization", authHeader(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.acceptableValues.length()").value(4))
+                    .andExpect(jsonPath("$.data.acceptableValues[0]").value("100cc"))
+                    .andExpect(jsonPath("$.data.acceptableValues[3]").value("200cc"));
+        }
+
+        @Test
+        @DisplayName("Update icon URL")
+        void updateIconUrl_ReturnsOk() throws Exception {
+            AttributeDefinition attr = createTestAttribute("Engine Type", ListingType.VEHICLE, true);
+
+            AttributeUpdateRequest request = AttributeUpdateRequest.builder()
+                    .iconUrl("https://cdn.ridelist.ng/icons/new-engine.svg")
+                    .build();
+
+            mockMvc.perform(put("/api/v1/admin/attributes/{id}", attr.getId())
+                            .header("Authorization", authHeader(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.iconUrl").value("https://cdn.ridelist.ng/icons/new-engine.svg"));
+        }
+
+        @Test
+        @DisplayName("Update listing types - add new type")
+        void updateListingTypes_AddsNewType() throws Exception {
+            AttributeDefinition attr = createTestAttribute("Brand", ListingType.VEHICLE, true);
+
+            AttributeUpdateRequest request = AttributeUpdateRequest.builder()
+                    .listingTypes(Set.of(ListingType.VEHICLE, ListingType.PART))
+                    .build();
+
+            mockMvc.perform(put("/api/v1/admin/attributes/{id}", attr.getId())
+                            .header("Authorization", authHeader(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.listingTypes.length()").value(2));
+        }
     }
 
     // ==================== GET ATTRIBUTES TESTS ====================
@@ -289,7 +405,7 @@ class AdminAttributeControllerIntegrationTest extends BaseIntegrationTest {
                     new TypeReference<>() {});
 
             assertThat(response.getData()).hasSize(2);
-            assertThat(response.getData()).allMatch(a -> a.getListingType() == ListingType.VEHICLE);
+            assertThat(response.getData()).allMatch(a -> a.getListingTypes().contains(ListingType.VEHICLE));
         }
 
         @Test

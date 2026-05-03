@@ -3,6 +3,8 @@ package com.ridelist.repository;
 import com.ridelist.model.AttributeDefinition;
 import com.ridelist.model.ListingType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -16,13 +18,16 @@ public interface AttributeDefinitionRepository extends JpaRepository<AttributeDe
 
     boolean existsBySlug(String slug);
 
-    List<AttributeDefinition> findByListingTypeAndActiveTrue(ListingType listingType);
+    @Query("SELECT a FROM AttributeDefinition a WHERE :listingType MEMBER OF a.listingTypes AND a.active = true")
+    List<AttributeDefinition> findByListingTypeAndActiveTrue(@Param("listingType") ListingType listingType);
 
-    List<AttributeDefinition> findByListingType(ListingType listingType);
+    @Query("SELECT a FROM AttributeDefinition a WHERE :listingType MEMBER OF a.listingTypes")
+    List<AttributeDefinition> findByListingType(@Param("listingType") ListingType listingType);
 
     List<AttributeDefinition> findByActiveTrue();
 
     List<AttributeDefinition> findByFilterableTrueAndActiveTrue();
 
-    List<AttributeDefinition> findByListingTypeAndFilterableTrueAndActiveTrue(ListingType listingType);
+    @Query("SELECT a FROM AttributeDefinition a WHERE :listingType MEMBER OF a.listingTypes AND a.filterable = true AND a.active = true")
+    List<AttributeDefinition> findByListingTypeAndFilterableTrueAndActiveTrue(@Param("listingType") ListingType listingType);
 }

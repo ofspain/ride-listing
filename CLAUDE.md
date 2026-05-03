@@ -100,7 +100,7 @@ Make (1) ←→ (N) VehicleModel (1) ←→ (N) ModelYear
 
 ### Dynamic Attributes System
 
-Allows admins to define filterable attributes (e.g., engine type, fuel type, color), sellers to provide values, and users to filter/search using them.
+Allows admins to define filterable attributes (e.g., engine type, fuel type, color), sellers to provide values from predefined choices, and users to filter/search using them.
 
 **Entities:**
 
@@ -108,7 +108,9 @@ Allows admins to define filterable attributes (e.g., engine type, fuel type, col
   - `id` (UUID, PK)
   - `name` (String) - e.g., "Engine Type"
   - `slug` (String, unique, indexed) - e.g., "engine-type"
-  - `listingType` (Enum: VEHICLE, PART) - applies to which listing type
+  - `listingTypes` (Set<ListingType>) - can apply to VEHICLE, PART, or both
+  - `iconUrl` (String, nullable) - URL to icon for frontend display
+  - `acceptableValues` (List<String>) - predefined values users must choose from
   - `filterable` (Boolean) - usable in search filters
   - `required` (Boolean) - must be provided when creating listing
   - `active` (Boolean) - whether attribute is currently active
@@ -118,14 +120,24 @@ Allows admins to define filterable attributes (e.g., engine type, fuel type, col
   - `id` (UUID, PK)
   - `listing` (ManyToOne → Listing)
   - `attribute` (ManyToOne → AttributeDefinition)
-  - `value` (String) - free text value
+  - `value` (String) - must be from attribute's acceptableValues
   - `createdAt` (LocalDateTime)
+
+**Database Tables:**
+- `attribute_definitions` - Main attribute table
+- `attribute_listing_types` - Join table for attribute-to-listing-type (many-to-many)
+- `attribute_acceptable_values` - Predefined values with display_order
 
 **Constraints:**
 - Unique (listing_id, attribute_id) - one value per attribute per listing
 - Attribute must be active to be used
-- Attribute must match listing's listingType
+- Listing's listingType must be in attribute's listingTypes set
+- Submitted value must be in attribute's acceptableValues list
 - Required attributes enforced at service layer
+
+**Validation at Listing Save:**
+1. Check attribute's listingTypes contains listing's listingType
+2. Check submitted value is in attribute's acceptableValues
 
 **Listing Integration:**
 - Listing entity has `attributes` relationship (OneToMany → ListingAttributeValue)
@@ -138,6 +150,8 @@ Allows admins to define filterable attributes (e.g., engine type, fuel type, col
     ]
   }
   ```
+
+**See:** `ATTRIBUTE-REFURBISHMENT.md` for full breaking change documentation
 
 ### Key Enums
 
@@ -217,6 +231,7 @@ Located in `src/main/resources/db/migration/`:
 - V7: Vehicle categorization (makes, vehicle_models, model_years tables + listing categorization columns)
 - V8: Dynamic attributes (attribute_definitions, listing_attribute_values tables)
 - V9: Soft delete support (deleted_at column on users table)
+- V10: Attribute refurbishment (attribute_listing_types join table, icon_url, attribute_acceptable_values)
 
 ### Connection
 Configured via environment variables:
@@ -924,6 +939,113 @@ Requires `ROLE_ADMIN`. Uses `@PreAuthorize("hasRole('ADMIN')")`.
 - Invalid parent IDs throw `ResourceNotFoundException` (HTTP 404)
 - All write operations invalidate the categorization cache
 
+### AdminDashboardController (ADMIN ONLY)
+
+Location: `controller/AdminDashboardController.java`
+
+Base path: `/api/v1/admin/dashboard`
+
+Requires `ROLE_ADMIN`. Uses `@PreAuthorize("hasRole('ADMIN')")`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/stats` | Get dashboard statistics (cached) |
+| POST | `/stats/refresh` | Force refresh dashboard cache |
+
+**Response DTO:** `AdminDashboardStatsResponse`
+
+```json
+{
+  "totalListings": 1284,
+  "activeListings": 847,
+  "totalUsers": 3201,
+  "pendingInquiries": 56,
+  "listingsThisWeek": 12,
+  "usersThisWeek": 34,
+  "statusBreakdown": [
+    { "status": "DRAFT", "count": 184, "percentage": 14.3 },
+    { "status": "ACTIVE", "count": 847, "percentage": 65.9 }
+  ],
+  "recentListings": [
+    {
+      "id": "uuid",
+      "title": "TVS Apache RTR 160",
+      "listingType": "VEHICLE",
+      "status": "ACTIVE",
+      "sellerName": "John Doe",
+      "createdAt": "2026-04-29T08:30:00"
+    }
+  ],
+  "recentUsers": [
+    {
+      "id": "uuid",
+      "firstName": "John",
+      "lastName": "Doe",
+      "email": "john@example.com",
+      "accountType": "DEALER",
+      "role": "USER",
+      "createdAt": "2026-04-29T10:00:00"
+    }
+  ],
+  "generatedAt": "2026-04-29T12:00:00"
+}
+```
+
+**Caching:**
+- Stats are cached using `InMemoryCache` with default 10-hour TTL
+- Cache key: `admin:dashboard:stats`
+- Use POST `/stats/refresh` to force recalculation
+
+### AdminListingController (ADMIN ONLY)
+
+Location: `controller/AdminListingController.java`
+
+Base path: `/api/v1/admin/listings`
+
+Requires `ROLE_ADMIN`. Uses `@PreAuthorize("hasRole('ADMIN')")`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Get all listings (paginated, across ALL sellers) |
+| PUT | `/{id}/status` | Change listing status |
+| DELETE | `/{id}` | Soft delete listing (sets status to DELETED) |
+
+**Query Parameters for GET /api/v1/admin/listings:**
+- `search` (String, optional) - Filter by title or seller name (case-insensitive LIKE)
+- `status` (ListingStatus, optional) - Filter by status (admins can see ALL statuses including DELETED)
+- `listingType` (ListingType, optional) - Filter by VEHICLE or PART
+- `category` (ListingCategory, optional) - Filter by category
+- `page` (int, default 0) - Page number
+- `size` (int, default 20) - Page size
+- `sort` (String, default "createdAt,desc") - Sort field and direction
+
+**Status Change Request:**
+```json
+{
+  "status": "ACTIVE"
+}
+```
+
+**Allowed Status Transitions:**
+| From | Allowed To |
+|------|------------|
+| DRAFT | PUBLISHED, ACTIVE, DELETED |
+| PUBLISHED | ACTIVE, EXPIRED, DELETED |
+| ACTIVE | SOLD, EXPIRED, DELETED |
+| SOLD | DELETED |
+| EXPIRED | ACTIVE, DELETED |
+| DELETED | (no transitions allowed) |
+
+Invalid transitions return HTTP 400 with message: "Cannot transition from {current} to {requested}"
+
+**Request DTOs:**
+- `ChangeListingStatusRequest` - `{ status }` (ListingStatus enum value, required)
+
+**Response:**
+- GET: `ApiResponse<PagedResponse<ListingSummaryResponse>>`
+- PUT status: `ApiResponse<ListingResponse>`
+- DELETE: `ApiResponse<Void>` with message "Listing deleted successfully"
+
 ### AdminAttributeController (ADMIN ONLY)
 
 Location: `controller/AdminAttributeController.java`
@@ -1245,6 +1367,129 @@ Admin service for managing vehicle categorization hierarchy (Make → VehicleMod
 
 **Cache Integration:** All create/update/delete operations call `cache.evictAll()` to invalidate cached categorization data.
 
+### AdminListingService
+
+Location: `service/AdminListingService.java`
+
+Admin service for managing listings across all sellers.
+
+**Operations:**
+- `adminGetListings(search, status, listingType, category, pageable)` - Get paginated listings with filters
+- `adminChangeListingStatus(UUID listingId, ListingStatus newStatus, UUID adminId)` - Change listing status with transition validation
+- `adminDeleteListing(UUID listingId, UUID adminId)` - Soft delete listing (sets status to DELETED)
+
+**Status Transition Rules:**
+Status transitions are enforced by the service. Invalid transitions throw `BadRequestException` with message "Cannot transition from {current} to {requested}".
+
+**Allowed Transitions:**
+```
+DRAFT → PUBLISHED, ACTIVE, DELETED
+PUBLISHED → ACTIVE, EXPIRED, DELETED
+ACTIVE → SOLD, EXPIRED, DELETED
+SOLD → DELETED
+EXPIRED → ACTIVE, DELETED
+DELETED → (no transitions allowed)
+```
+
+**Logging:**
+- Status changes: "Admin {adminId} changed listing {listingId} status from {old} to {new}"
+- Deletions: "Admin {adminId} deleted listing {listingId}"
+
+### AdminDashboardService
+
+Location: `service/AdminDashboardService.java`
+
+Admin service for computing dashboard statistics with caching.
+
+**Operations:**
+- `getDashboardStats()` - Get cached dashboard statistics (uses InMemoryCache)
+- `evictDashboardCache()` - Force cache eviction to trigger recalculation
+
+**Statistics Computed:**
+- `totalListings` - Total listings count
+- `activeListings` - Listings with status ACTIVE
+- `totalUsers` - Total registered users
+- `pendingInquiries` - Contact requests with status PENDING
+- `listingsThisWeek` - Listings created in last 7 days
+- `usersThisWeek` - Users registered in last 7 days
+- `statusBreakdown` - Count and percentage per ListingStatus
+- `recentListings` - Last 10 listings with seller names
+- `recentUsers` - Last 10 registered users
+
+**Caching:**
+- Cache key: `admin:dashboard:stats`
+- TTL: 10 hours (uses InMemoryCache default)
+- Automatic refresh on cache miss or expiration
+
+## Email Infrastructure
+
+RideList uses a pluggable email system with multiple sender implementations.
+
+### Architecture
+
+```
+EmailTemplateService → EmailSenderFactory → [MockEmailSender|SmtpEmailSender|SesEmailSender]
+```
+
+### Components
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| `EmailMessage` | `email/EmailMessage.java` | DTO for email content |
+| `EmailSender` | `email/sender/EmailSender.java` | Interface for senders |
+| `MockEmailSender` | `email/sender/MockEmailSender.java` | Logs to console |
+| `SmtpEmailSender` | `email/sender/SmtpEmailSender.java` | Sends via SMTP |
+| `SesEmailSender` | `email/sender/SesEmailSender.java` | AWS SES stub |
+| `EmailSenderFactory` | `email/sender/EmailSenderFactory.java` | Selects active sender |
+| `EmailTemplateService` | `email/EmailTemplateService.java` | Builds templated emails |
+| `AsyncConfig` | `config/AsyncConfig.java` | Async thread pool |
+
+### Configuration Properties
+
+```properties
+# Active sender: mock, smtp, or ses
+app.email.sender=${EMAIL_SENDER:mock}
+app.email.from-address=${EMAIL_FROM:noreply@ridelist.ng}
+app.email.from-name=${EMAIL_FROM_NAME:RideList}
+
+# Frontend URL for email links
+app.frontend.base-url=${FRONTEND_BASE_URL:http://localhost:8081}
+
+# SMTP settings (when sender=smtp)
+spring.mail.host=${SMTP_HOST:smtp.gmail.com}
+spring.mail.port=${SMTP_PORT:587}
+spring.mail.username=${SMTP_USERNAME:}
+spring.mail.password=${SMTP_PASSWORD:}
+```
+
+### Email Templates
+
+Located in `src/main/resources/templates/emails/`:
+- `welcome.html` - Welcome email for new users
+- `password-recovery.html` - Password reset email
+
+Templates use Thymeleaf with variables like `firstName`, `appName`, `year`, `loginUrl`, `resetUrl`.
+
+### Usage Example
+
+```java
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+    private final EmailTemplateService emailTemplateService;
+    private final EmailSenderFactory emailSenderFactory;
+
+    @Async
+    public void sendWelcomeEmail(User user) {
+        EmailMessage message = emailTemplateService
+            .buildWelcomeEmail(user.getEmail(), user.getFirstName());
+        emailSenderFactory.getActiveSender().send(message);
+    }
+}
+```
+
+**See:** `EMAIL-INFRASTRUCTURE.md` for full documentation
+
 ## Build & Run
 
 ```bash
@@ -1304,7 +1549,10 @@ src/test/java/com/ridelist/
     ├── RegistrationAccountTypeIntegrationTest.java      # 7 tests (GAP 1)
     ├── ProfileEndpointsIntegrationTest.java             # 19 tests (GAP 2)
     ├── AdminCategorizationControllerIntegrationTest.java # 21 tests (GAP 3)
-    └── TokenRefreshIntegrationTest.java                 # 12 tests (GAP 4)
+    ├── TokenRefreshIntegrationTest.java                 # 12 tests (GAP 4)
+    ├── AdminListingControllerIntegrationTest.java       # 32 tests
+    ├── AttributeValidationIntegrationTest.java          # 14 tests
+    └── AdminDashboardControllerIntegrationTest.java     # 13 tests
 ```
 
 ### Base Integration Test
@@ -1346,8 +1594,11 @@ All integration tests extend `BaseIntegrationTest` which provides:
 | ProfileEndpoints | 19 | Get/Update profile, change password, delete account (GAP 2) |
 | AdminCategorizationController | 21 | Make/Model/Year CRUD, cascades, cache invalidation (GAP 3) |
 | TokenRefresh | 12 | Refresh token validation, new access token, error cases (GAP 4) |
+| AdminListingController | 32 | Admin listing management, status transitions, filters, auth |
+| AttributeValidation | 14 | Attribute value validation on listings, filter validation |
+| AdminDashboardController | 13 | Dashboard stats, caching, auth |
 
-**Total: 230 integration tests**
+**Total: 289 integration tests**
 
 ### Key Testing Notes
 

@@ -1,232 +1,204 @@
-You are a senior spring boot engineer working on a Spring Boot 3.2 REST API called
-RideList. Four gaps have been identified during
-frontend integration analysis. Fix all four.
+You are completing the SEO URL
+implementation. Prompts 1, 2, 3 done.
 
-Read the existing codebase thoroughly before making
-any changes. Do not break existing functionality.
-
----
-
-GAP 1 — Registration accountType + auto-upgrade flow
-
-CURRENT BEHAVIOR
-RegisterRequest does not accept accountType. All new
-users default to INDIVIDUAL. Auto-upgrade to DEALER
-occurs when a user posts their first listing.
-
-REQUIRED CHANGES
-
-1. Add optional accountType field to RegisterRequest:
-
-   @JsonProperty("accountType")
-   private AccountType accountType;
-
-  - Field is optional — if null, default to INDIVIDUAL
-  - If provided, set the user's AccountType to that
-    value on registration
-  - Valid values: INDIVIDUAL, DEALER
-  - Invalid values should return 400 Bad Request
-
-2. Keep the existing auto-upgrade behavior intact:
-  - If a user registered as INDIVIDUAL and posts
-    their first listing, upgrade to DEALER as before
-  - If a user registered as DEALER, no change needed
-
-3. Update AuthService.register() accordingly:
-
-   AccountType type = request.getAccountType() != null
-   ? request.getAccountType()
-   : AccountType.INDIVIDUAL;
-   user.setAccountType(type);
-
-4. Add accountType to AuthResponse and UserResponse
-   so the frontend receives it after login/register.
-   Confirm it is already present — if not, add it.
-
-5. Add a migration if the users table needs any
-   schema change (it likely does not since
-   account_type column already exists).
+Read before touching anything:
+- SLUG-ARCHITECTURE.md
+- All updated controller and service files
+- AdminListingController.java
+- dto/response/ListingSummaryResponse.java
+- dto/response/ListingResponse.java
 
 ---
 
-GAP 2 — Profile update endpoint
+STEP 1 — Admin listing response update
 
-Add the following endpoints to a new or existing
-UserController at base path /api/v1/account.
+AdminListingController returns listings
+for the admin panel. Update admin
+listing responses to also include
+the canonicalUrl field so admins can
+click through to the public SEO URL
+from the admin panel.
 
-GET /api/v1/account/me
-- Returns the currently authenticated user's profile
-- Auth: required (any authenticated user)
-- Response: UserResponse (id, firstName, lastName,
-  email, accountType, role, state, createdAt)
-
-PUT /api/v1/account/me
-- Updates the authenticated user's profile
-- Auth: required
-- Request body: UpdateProfileRequest
-  {
-  "firstName": "string (optional)",
-  "lastName": "string (optional)",  
-  "stateId": "UUID (optional)"
-  }
-- Only updates fields that are provided (partial
-  update — ignore null fields)
-- Response: updated UserResponse
-
-PUT /api/v1/account/me/password
-- Changes the authenticated user's password
-- Auth: required
-- Request body: ChangePasswordRequest
-  {
-  "currentPassword": "string (required)",
-  "newPassword": "string (required, min 8 chars)",
-  "confirmPassword": "string (required)"
-  }
-- Validate currentPassword matches stored BCrypt hash
-- Validate newPassword and confirmPassword match
-- Return 400 if currentPassword is wrong
-- Return 400 if passwords do not match
-- Response: ApiResponse.success("Password updated
-  successfully")
-
-DELETE /api/v1/account/me
-- Permanently deletes the authenticated user's account
-- Auth: required
-- Soft or hard delete — match existing pattern in
-  the codebase
-- Also deletes or marks as DELETED all listings
-  owned by this user
-- Response: ApiResponse.success("Account deleted")
-
-Create UpdateProfileRequest, ChangePasswordRequest
-DTOs with Jakarta validation annotations.
-Create UserService if it does not exist with:
-- getProfile(UUID userId)
-- updateProfile(UUID userId, UpdateProfileRequest)
-- changePassword(UUID userId, ChangePasswordRequest)
-- deleteAccount(UUID userId)
-
-Add these endpoints to SecurityConfig as authenticated
-(not public, not admin-only).
+Confirm ListingSummaryResponse already
+includes canonicalUrl from Prompt 2.
+If the admin panel uses a separate
+AdminListingSummaryResponse DTO:
+Add canonicalUrl there too.
 
 ---
 
-GAP 3 — Admin categorization endpoints
+STEP 2 — Account listings response
 
-The admin panel manages Make → VehicleModel → ModelYear
-hierarchy. These CRUD endpoints are missing entirely.
+GET /account/listings returns the
+dealer's own listings.
+These responses must also include
+canonicalUrl so the dealer workspace
+can show the dealer their listing's
+public URL.
 
-Add to a new AdminCategorizationController at base
-path /api/v1/admin/categorization.
-Require ROLE_ADMIN on all endpoints.
-Follow the exact same pattern as the existing
-AdminLocationController.
-
-MAKE ENDPOINTS
-POST   /makes           — Create make
-PUT    /makes/{id}      — Update make name
-DELETE /makes/{id}      — Delete make (cascade to
-models and years)
-GET    /makes           — Get all makes
-
-VEHICLE MODEL ENDPOINTS
-POST   /models          — Create model (requires makeId)
-PUT    /models/{id}     — Update model name
-DELETE /models/{id}     — Delete model (cascade to years)
-GET    /makes/{makeId}/models — Get models for a make
-
-MODEL YEAR ENDPOINTS
-POST   /years           — Create year (requires modelId)
-PUT    /years/{id}      — Update year name
-DELETE /years/{id}      — Delete year
-GET    /models/{modelId}/years — Get years for a model
-
-Request DTOs (follow same pattern as location DTOs):
-- CreateMakeRequest        — { name }
-- CreateVehicleModelRequest — { name, makeId }
-- CreateModelYearRequest   — { name, modelYearId }
-- UpdateCategorizationRequest — { name }
-
-Validation:
-- Slug uniqueness enforced (DuplicateResourceException)
-- Parent entity must exist (ResourceNotFoundException)
-- Delete cascade warns if listings reference this
-  make/model/year — do not block delete, just cascade
-
-Cache invalidation:
-- All write operations must call cache.evictAll()
-  exactly as LocationService does
-- This ensures lookup endpoints reflect changes
-  immediately
-
-Create CategorizationService if it does not exist.
-If it already exists, extend it with these methods.
+Confirm the account endpoint uses
+ListingSummaryResponse which already
+has canonicalUrl.
+If it uses a different DTO:
+add canonicalUrl to that DTO.
 
 ---
 
-GAP 4 — Token refresh endpoint
+STEP 3 — Sitemap data endpoint
 
-Add a token refresh endpoint to AuthController.
+The frontend needs a way to generate
+a sitemap that includes real listing
+URLs. Add a lightweight endpoint:
 
-POST /api/v1/auth/refresh
-- Public endpoint (no Bearer token required)
-- Request body: RefreshTokenRequest
-  {
-  "refreshToken": "string (required)"
-  }
-- Validate the refreshToken:
-  - Must be a valid JWT signed with the same secret
-  - Must not be expired
-  - Extract userId from claims
-  - Load user from database to confirm account exists
-- On success: generate a new accessToken and return:
-  {
-  "accessToken": "string",
-  "tokenType": "Bearer",
-  "expiresIn": 86400
-  }
-- On failure:
-  - Invalid token: 401 Unauthorized
-  - Expired token: 401 Unauthorized with message
-    "Refresh token expired. Please log in again."
-  - User not found: 401 Unauthorized
+@GetMapping("/listings/sitemap-data")
+public ApiResponse<SitemapData>
+getSitemapData() {
+// Return recently active listing
+// canonical URLs for sitemap
+// Limit to last 1000 active listings
+// Only return canonicalUrl and
+// updatedAt — nothing else
 
-Generate refresh token in AuthService.register()
-and AuthService.login() if not already doing so.
-Refresh token should have a longer expiry than
-access token — 7 days recommended.
+List<SitemapEntry> entries =
+listingRepository
+.findRecentActiveForSitemap(
+PageRequest.of(0, 1000)
+)
+.stream()
+.map(listing -> new SitemapEntry(
+SlugUtil.toListingUrl(
+listing.getListingType(),
+listing.getVehicleType(),
+listing.getState() != null
+? listing.getState().getSlug()
+: null,
+listing.getAxis() != null
+? listing.getAxis().getSlug()
+: null,
+listing.getArea() != null
+? listing.getArea().getSlug()
+: null,
+listing.getListingNumber(),
+listing.getTitle()
+),
+listing.getUpdatedAt()
+))
+.toList();
 
-Add RefreshTokenRequest DTO with validation.
-Add the endpoint to SecurityConfig as public
-(same as /auth/register and /auth/login).
+return ApiResponse.success(
+new SitemapData(entries)
+);
+}
+
+Add to ListingRepository:
+
+@Query("SELECT l FROM Listing l " +
+"WHERE l.status IN " +
+"('ACTIVE', 'PUBLISHED') " +
+"ORDER BY l.createdAt DESC")
+List<Listing> findRecentActiveForSitemap(
+Pageable pageable
+);
+
+Create records:
+public record SitemapEntry(
+String url,
+LocalDateTime lastModified
+) {}
+
+public record SitemapData(
+List<SitemapEntry> listings
+) {}
+
+Make this endpoint public in SecurityConfig:
+/api/v1/listings/sitemap-data → public
 
 ---
 
-AFTER ALL CHANGES
+STEP 4 — Log canonical URLs
 
-1. Add a Flyway migration if any schema changes
-   were made (profile fields, token fields, etc.)
+In MarketplaceListingService update
+logging to include listing_number:
 
-2. Confirm all four new/updated endpoint groups
-   are covered by the existing GlobalExceptionHandler
+Replace:
+log.info("Listing created: {} by seller {}",
+listingId, sellerId);
 
-3. Add the new endpoints to SecurityConfig in the
-   correct access tier:
-  - /api/v1/auth/refresh → public
-  - /api/v1/account/me → authenticated
-  - /api/v1/account/me/password → authenticated
-  - /api/v1/account/me (DELETE) → authenticated
-  - /api/v1/admin/categorization/** → ROLE_ADMIN
+With:
+log.info(
+"Listing created: #{} ({}) by seller {}",
+listing.getListingNumber(),
+listing.getCanonicalUrl(),  
+// if available in service
+sellerId
+);
 
-4. Add OpenAPI/Swagger annotations to all new
-   endpoints so the spec stays current
+This makes logs immediately linkable —
+seeing #10247 in a log you can
+construct the URL instantly.
 
-5. After completing all changes, provide a summary:
-  - Files created
-  - Files modified
-  - Migrations added
-  - Any decisions made where the spec was ambiguous
+---
 
+STEP 5 — Final integration tests
 
-### Update context
-Update the CLAUDE.md file of this project with this newly added context/functionalities
+1. Account listings response includes
+   canonicalUrl
+2. Admin listings response includes
+   canonicalUrl
+3. Sitemap data returns active listings
+4. Sitemap entry urls match expected pattern
+5. Sitemap limited to 1000 entries
+
+---
+
+AFTER ALL STEPS:
+
+1. mvn test — all tests pass
+2. Final refresh of docs/api-spec.json
+3. Confirm all five new endpoints
+   appear in Swagger UI
+4. Manually test the full URL chain:
+   a. Create a listing
+   b. Note the listing_number in response
+   c. Note the canonicalUrl in response
+   d. Call GET /listings/ref/{number}
+   e. Confirm returns correct listing
+   f. Call GET /listings/browse/motorcycles
+   ?stateSlug=lagos
+   g. Confirm response contains listings
+   with correct canonicalUrl format
+
+Final update to SLUG-ARCHITECTURE.md:
+
+Add section: ## Implementation Status
+✅ Database migration (listing_number, slug)
+✅ SlugUtil methods
+✅ Response DTOs updated
+✅ createListing generates slug
+✅ updateListing regenerates slug on title change
+✅ GET /listings/ref/{ref} endpoint
+✅ GET /listings/{idOrRef} backward compat
+✅ GET /listings/browse/{categoryPath}
+✅ GET /listings/browse/{categoryPath}/meta
+✅ GET /listings/sitemap-data
+✅ Admin + account responses include canonicalUrl
+✅ All tests passing
+
+Add section: ## Frontend Integration Notes
+The frontend should:
+1. Use canonicalUrl from API responses
+   for all listing links — never build
+   URLs manually on frontend
+2. Call /listings/browse/{category} for
+   category browse pages
+3. Call /listings/ref/{number}-{slug}
+   for listing detail pages
+4. Use /listings/browse/{category}/meta
+   for dynamic page titles
+5. Poll /listings/sitemap-data for
+   dynamic sitemap generation
+
+#### write test cases, but do not run the tests
+
+#### UPDATE DOCS
+update the SLUG-BASED-SEO-ARCHITECTURE.md documentation for this seo optimization and detail this feature there

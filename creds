@@ -1,0 +1,5 @@
+aws.access-key=${AWS_ACCESS_KEY:AKIA3IQC4NYOGQ53CZEH}
+aws.secret-key=${AWS_SECRET_KEY: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}
+jwt.secret=${JWT_SECRET:kLpTbDxY+mPEGlAmiQLGAl9OuI5h2VwvGz5rsToncTo=}
+spring.datasource.username=${DB_USERNAME:postgres}
+spring.datasource.password=${DB_PASSWORD:ofspain86}

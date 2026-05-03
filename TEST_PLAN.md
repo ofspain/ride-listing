@@ -408,7 +408,9 @@ src/test/java/com/ridelist/
     ├── AccountDeletionIntegrationTest.java        # Delete account tests
     ├── AuthAfterDeletionIntegrationTest.java      # Auth blocking after deletion
     ├── ListingVisibilityAfterDeletionTest.java    # Listing filtering tests
-    └── DeleteAccountDataIntegrityTest.java        # Data integrity for deletion
+    ├── DeleteAccountDataIntegrityTest.java        # Data integrity for deletion
+    ├── AdminListingControllerIntegrationTest.java # Admin listing management (32 tests)
+    └── ImpersonationIntegrationTest.java          # User impersonation (11 tests)
 ```
 
 **Note:** All integration tests are placed in the `com.ridelist.integration` package for organization.
@@ -2147,7 +2149,143 @@ void deleteMake_cascadesToModelsAndYears() throws Exception {
 
 ---
 
-### 4.14 Token Refresh (GAP 4)
+### 4.14 Admin Listing Management
+
+**Test Class:** `AdminListingControllerIntegrationTest`
+
+Tests admin endpoints for listing management at `/api/v1/admin/listings`.
+
+#### GET /api/v1/admin/listings (10 tests)
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| ADMLIST-001 | Admin gets all listings | Valid admin token | 200 OK, all listings returned |
+| ADMLIST-002 | Filter by status | status=ACTIVE | Only ACTIVE listings |
+| ADMLIST-003 | Filter by listingType | listingType=VEHICLE | Only VEHICLE listings |
+| ADMLIST-004 | Filter by category | category=MOTORCYCLE | Only MOTORCYCLE listings |
+| ADMLIST-005 | Search by title | search=honda | Listings with "honda" in title |
+| ADMLIST-006 | Search by seller name | search=John | Listings by seller named John |
+| ADMLIST-007 | Admin sees DELETED listings | status=DELETED | DELETED listings returned |
+| ADMLIST-008 | Pagination support | page=0&size=10 | Paginated results |
+| ADMLIST-009 | Non-admin gets 403 | USER role | 403 Forbidden |
+| ADMLIST-010 | Unauthenticated gets 401 | No token | 401 Unauthorized |
+
+#### PUT /api/v1/admin/listings/{id}/status (9 tests)
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| ADMLIST-020 | DRAFT → ACTIVE | Valid transition | 200 OK, status changed |
+| ADMLIST-021 | ACTIVE → SOLD | Valid transition | 200 OK, status changed |
+| ADMLIST-022 | EXPIRED → ACTIVE | Valid transition | 200 OK, status changed |
+| ADMLIST-023 | DELETED → ACTIVE (invalid) | Invalid transition | 400 Bad Request |
+| ADMLIST-024 | SOLD → ACTIVE (invalid) | Invalid transition | 400 Bad Request |
+| ADMLIST-025 | Non-existent listing | Random UUID | 404 Not Found |
+| ADMLIST-026 | Non-admin cannot change | USER role | 403 Forbidden |
+| ADMLIST-027 | Null status validation | Empty body | 400 Bad Request |
+
+#### DELETE /api/v1/admin/listings/{id} (5 tests)
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| ADMLIST-030 | Soft delete listing | Valid listing ID | 200 OK, status = DELETED |
+| ADMLIST-031 | Delete already deleted | DELETED listing | 200 OK (idempotent) |
+| ADMLIST-032 | Non-existent listing | Random UUID | 404 Not Found |
+| ADMLIST-033 | Non-admin cannot delete | USER role | 403 Forbidden |
+| ADMLIST-034 | Unauthenticated | No token | 401 Unauthorized |
+
+#### Status Transition Rules (8 tests)
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| ADMLIST-040 | DRAFT → PUBLISHED | Valid | 200 OK |
+| ADMLIST-041 | DRAFT → DELETED | Valid | 200 OK |
+| ADMLIST-042 | PUBLISHED → ACTIVE | Valid | 200 OK |
+| ADMLIST-043 | PUBLISHED → EXPIRED | Valid | 200 OK |
+| ADMLIST-044 | ACTIVE → EXPIRED | Valid | 200 OK |
+| ADMLIST-045 | SOLD → DELETED | Valid | 200 OK |
+| ADMLIST-046 | EXPIRED → DELETED | Valid | 200 OK |
+
+```java
+@Test
+void adminCanChangeStatusFromDraftToActive() throws Exception {
+    Listing listing = createTestListing(seller, ListingType.VEHICLE);
+
+    ChangeListingStatusRequest request = ChangeListingStatusRequest.builder()
+            .status(ListingStatus.ACTIVE)
+            .build();
+
+    mockMvc.perform(put("/api/v1/admin/listings/{id}/status", listing.getId())
+                    .header("Authorization", authHeader(adminToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+}
+```
+
+---
+
+### 4.15 User Impersonation
+
+**Test Class:** `ImpersonationIntegrationTest`
+
+Tests user impersonation endpoint at `POST /api/v1/admin/users/{userId}/impersonate`.
+
+#### Impersonation Endpoint (6 tests)
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| IMP-001 | Admin impersonates regular user | Valid target userId | 200 OK, token returned |
+| IMP-002 | Cannot impersonate admin | Target is admin | 400 Bad Request |
+| IMP-003 | Cannot impersonate self | Target is caller | 400 Bad Request |
+| IMP-004 | Non-admin cannot impersonate | USER role | 403 Forbidden |
+| IMP-005 | Unauthenticated | No token | 401 Unauthorized |
+| IMP-006 | Non-existent user | Random UUID | 404 Not Found |
+
+#### Impersonation Token Validity (5 tests)
+
+| Test ID | Scenario | Input | Expected Result |
+|---------|----------|-------|-----------------|
+| IMP-010 | Token valid for user endpoints | Use on /account/me | 200 OK, target user info |
+| IMP-011 | Token accesses user's listings | Use on /account/listings | Target user's listings |
+| IMP-012 | Token has isImpersonation claim | Check token claims | isImpersonation=true |
+| IMP-013 | Regular token not impersonation | Check regular token | isImpersonation=false |
+| IMP-014 | Token cannot access admin endpoints | Use on /admin/* | 403 Forbidden |
+
+```java
+@Test
+void adminCanImpersonateRegularUser() throws Exception {
+    MvcResult result = mockMvc.perform(post("/api/v1/admin/users/{userId}/impersonate", regularUser.getId())
+                    .header("Authorization", authHeader(adminToken)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.accessToken").exists())
+            .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+            .andExpect(jsonPath("$.data.expiresIn").value(1800))
+            .andReturn();
+}
+
+@Test
+void impersonationTokenValidForUserEndpoints() throws Exception {
+    // Get impersonation token
+    MvcResult impersonateResult = mockMvc.perform(
+            post("/api/v1/admin/users/{userId}/impersonate", regularUser.getId())
+                    .header("Authorization", authHeader(adminToken)))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    String impersonationToken = extractAccessToken(impersonateResult);
+
+    // Use token on user's own endpoint
+    mockMvc.perform(get("/api/v1/account/me")
+                    .header("Authorization", authHeader(impersonationToken)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value(regularUser.getId().toString()));
+}
+```
+
+---
+
+### 4.16 Token Refresh (GAP 4)
 
 **Test Class:** `TokenRefreshIntegrationTest`
 
@@ -2552,8 +2690,10 @@ This test plan covers:
 | `ProfileEndpointsIntegrationTest` | 19 | Implemented | PROF-001 to PROF-032 (GAP 2) |
 | `AdminCategorizationControllerIntegrationTest` | 21 | Implemented | CAT-001 to CAT-030 (GAP 3) |
 | `TokenRefreshIntegrationTest` | 12 | Implemented | REFRESH-001 to REFRESH-008 (GAP 4) |
+| `AdminListingControllerIntegrationTest` | 32 | Implemented | Admin listing management (Session 2026-04-25) |
+| `ImpersonationIntegrationTest` | 11 | Implemented | User impersonation (Session 2026-04-25) |
 
-**Total Implemented: 230 tests** (as of 2026-04-24)
+**Total Implemented: 273 tests** (as of 2026-04-25)
 
 **Planned Tests:**
 - Delete Account feature: 50+ test scenarios (see `DELETE_ACCOUNT_TEST_PLAN.md`)

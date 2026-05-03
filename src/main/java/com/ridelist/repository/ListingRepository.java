@@ -12,9 +12,11 @@ import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.Modifying;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 
 @Repository
 public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpecificationExecutor<Listing> {
@@ -68,6 +70,8 @@ public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpec
 
     Optional<Listing> findByIdAndSellerId(UUID id, UUID sellerId);
 
+    Optional<Listing> findByListingNumber(Integer listingNumber);
+
     long countBySellerId(UUID sellerId);
 
     List<Listing> findTop10ByStatusOrderByCreatedAtDesc(ListingStatus status);
@@ -78,4 +82,56 @@ public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpec
             @Param("sellerId") UUID sellerId,
             @Param("newStatus") ListingStatus newStatus,
             @Param("excludeStatuses") List<ListingStatus> excludeStatuses);
+
+    long countByStatus(ListingStatus status);
+
+    @Query("SELECT COUNT(l) FROM Listing l WHERE l.createdAt >= :since")
+    long countByCreatedAtAfter(@Param("since") LocalDateTime since);
+
+    @Query("SELECT l.status, COUNT(l) FROM Listing l GROUP BY l.status")
+    List<Object[]> countGroupByStatus();
+
+    @Query("SELECT l FROM Listing l JOIN FETCH l.seller ORDER BY l.createdAt DESC")
+    List<Listing> findTop10RecentWithSeller(Pageable pageable);
+
+    @Query(value = """
+        SELECT
+            COUNT(l.id) as total_listings,
+            SUM(CASE WHEN l.status IN ('ACTIVE', 'PUBLISHED') THEN 1 ELSE 0 END) as active_listings,
+            COUNT(DISTINCT l.seller_id) as total_sellers,
+            COUNT(DISTINCT CASE WHEN l.status IN ('ACTIVE', 'PUBLISHED') THEN l.state_id END) as total_states,
+            COUNT(DISTINCT CASE WHEN l.status IN ('ACTIVE', 'PUBLISHED') THEN l.make_id END) as total_makes,
+            SUM(CASE WHEN l.created_at >= :yesterday THEN 1 ELSE 0 END) as new_listings_today
+        FROM listings l
+        WHERE l.status != 'DELETED'
+        """, nativeQuery = true)
+    Object[] computeMarketplaceStats(@Param("yesterday") LocalDateTime yesterday);
+
+    @Query(value = """
+        SELECT
+            COUNT(l.id) as total,
+            SUM(CASE WHEN l.status = 'PUBLISHED' THEN 1 ELSE 0 END) as published,
+            SUM(CASE WHEN l.status = 'ACTIVE' THEN 1 ELSE 0 END) as active,
+            SUM(CASE WHEN l.status = 'DRAFT' THEN 1 ELSE 0 END) as draft,
+            SUM(CASE WHEN l.status = 'SOLD' THEN 1 ELSE 0 END) as sold,
+            SUM(CASE WHEN l.status = 'EXPIRED' THEN 1 ELSE 0 END) as expired,
+            SUM(CASE WHEN l.created_at >= :weekStart THEN 1 ELSE 0 END) as new_this_week,
+            SUM(CASE WHEN l.status = 'SOLD' AND l.updated_at >= :weekStart THEN 1 ELSE 0 END) as sold_this_week,
+            SUM(CASE WHEN l.created_at >= :monthStart THEN 1 ELSE 0 END) as new_this_month,
+            SUM(CASE WHEN l.status = 'SOLD' AND l.updated_at >= :monthStart THEN 1 ELSE 0 END) as sold_this_month
+        FROM listings l
+        WHERE l.seller_id = :sellerId
+          AND l.status != 'DELETED'
+        """, nativeQuery = true)
+    Object[] computeDealerListingStats(
+            @Param("sellerId") UUID sellerId,
+            @Param("weekStart") LocalDateTime weekStart,
+            @Param("monthStart") LocalDateTime monthStart);
+
+    @Query("SELECT l.status, COUNT(l) FROM Listing l WHERE l.seller.id = :sellerId AND l.status <> 'DELETED' GROUP BY l.status")
+    List<Object[]> countBySellerGroupByStatus(@Param("sellerId") UUID sellerId);
+
+    @Query("SELECT l FROM Listing l LEFT JOIN FETCH l.state LEFT JOIN FETCH l.axis LEFT JOIN FETCH l.area " +
+           "WHERE l.status IN ('ACTIVE', 'PUBLISHED') ORDER BY l.createdAt DESC")
+    List<Listing> findRecentActiveForSitemap(Pageable pageable);
 }

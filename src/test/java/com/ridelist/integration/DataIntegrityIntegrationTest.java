@@ -353,7 +353,7 @@ class DataIntegrityIntegrationTest extends BaseIntegrationTest {
                 AttributeDefinition duplicate = AttributeDefinition.builder()
                         .name("Engine Type Duplicate")
                         .slug("engine-type") // same slug
-                        .listingType(ListingType.VEHICLE)
+                        .listingTypes(java.util.Set.of(ListingType.VEHICLE))
                         .filterable(false)
                         .required(false)
                         .active(true)

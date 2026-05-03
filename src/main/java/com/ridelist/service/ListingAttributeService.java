@@ -61,9 +61,9 @@ public class ListingAttributeService {
             if (!attribute.getActive()) {
                 throw new BadRequestException("Attribute '" + attribute.getName() + "' is not active");
             }
-            if (attribute.getListingType() != listing.getListingType()) {
+            if (!attribute.getListingTypes().contains(listing.getListingType())) {
                 throw new BadRequestException("Attribute '" + attribute.getName() +
-                        "' is not applicable to listing type " + listing.getListingType());
+                        "' does not apply to " + listing.getListingType() + " listings");
             }
         }
 
@@ -86,11 +86,20 @@ public class ListingAttributeService {
         List<ListingAttributeValue> newValues = new ArrayList<>();
         for (AttributeValueRequest request : attributeRequests) {
             AttributeDefinition attribute = attributeMap.get(request.getAttributeId());
+            String trimmedValue = request.getValue().trim();
+
+            // Validate value is in acceptable values list
+            if (!attribute.getAcceptableValues().isEmpty() &&
+                    !attribute.getAcceptableValues().contains(trimmedValue)) {
+                throw new BadRequestException(
+                        "Invalid value '" + trimmedValue + "' for attribute '" + attribute.getName() +
+                                "'. Acceptable values: " + attribute.getAcceptableValues());
+            }
 
             ListingAttributeValue value = ListingAttributeValue.builder()
                     .listing(listing)
                     .attribute(attribute)
-                    .value(request.getValue().trim())
+                    .value(trimmedValue)
                     .build();
 
             listing.getAttributes().add(value);

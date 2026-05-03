@@ -9,6 +9,7 @@ import com.ridelist.dto.response.ApiResponse;
 import com.ridelist.dto.response.AuthResponse;
 import com.ridelist.model.*;
 import com.ridelist.repository.*;
+import com.ridelist.repository.PasswordResetTokenRepository;
 import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -90,6 +91,9 @@ public abstract class BaseIntegrationTest {
 
     @Autowired
     protected ContactRequestRepository contactRequestRepository;
+
+    @Autowired
+    protected PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Autowired
     protected EntityManager entityManager;
@@ -197,10 +201,15 @@ public abstract class BaseIntegrationTest {
     }
 
     protected AttributeDefinition createTestAttribute(String name, ListingType type, boolean filterable) {
+        return createTestAttribute(name, type, filterable, java.util.List.of("Value1", "Value2", "Value3"));
+    }
+
+    protected AttributeDefinition createTestAttribute(String name, ListingType type, boolean filterable, java.util.List<String> acceptableValues) {
         AttributeDefinition attr = AttributeDefinition.builder()
                 .name(name)
                 .slug(name.toLowerCase().replace(" ", "-"))
-                .listingType(type)
+                .listingTypes(java.util.Set.of(type))
+                .acceptableValues(new java.util.ArrayList<>(acceptableValues))
                 .filterable(filterable)
                 .required(false)
                 .active(true)

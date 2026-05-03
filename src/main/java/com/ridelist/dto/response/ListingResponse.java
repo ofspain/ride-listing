@@ -51,4 +51,15 @@ public class ListingResponse {
     private List<AttributeValueResponse> attributes;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // SEO URL fields
+    private Integer listingNumber;
+    private String slug;
+    private String canonicalUrl;
+    private String categoryPath;
+
+    // Browse path segments for breadcrumb navigation
+    private String statePath;
+    private String axisPath;
+    private String areaPath;
 }

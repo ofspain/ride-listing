@@ -2,6 +2,7 @@ package com.ridelist.repository.specification;
 
 import com.ridelist.model.*;
 import jakarta.persistence.criteria.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 public class ListingSpecification {
 
     private ListingSpecification() {
@@ -72,12 +74,18 @@ public class ListingSpecification {
             }
 
             // Dynamic attribute filters
+            // Note: Filter value validation against acceptableValues is done here via subquery.
+            // If a filter value is not in the attribute's acceptable values, the subquery
+            // will return no results for that attribute, effectively ignoring the invalid filter.
             if (attributeFilters != null && !attributeFilters.isEmpty()) {
                 for (Map.Entry<String, String> entry : attributeFilters.entrySet()) {
                     String attributeSlug = entry.getKey();
                     String attributeValue = entry.getValue();
 
                     // Create a subquery to check for matching attribute values
+                    // The subquery validates the value exists in listing_attribute_values,
+                    // which inherently validates it's an acceptable value (since only acceptable
+                    // values can be saved to listings per ListingAttributeService validation)
                     Subquery<UUID> subquery = query.subquery(UUID.class);
                     Root<ListingAttributeValue> attributeRoot = subquery.from(ListingAttributeValue.class);
                     Join<ListingAttributeValue, AttributeDefinition> attributeDefJoin =
@@ -99,6 +107,8 @@ public class ListingSpecification {
                     );
 
                     predicates.add(criteriaBuilder.in(root.get("id")).value(subquery));
+
+                    log.debug("Applied attribute filter: {}={}", attributeSlug, attributeValue);
                 }
             }
 

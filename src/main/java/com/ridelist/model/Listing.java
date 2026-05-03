@@ -14,7 +14,10 @@ import java.util.List;
         @Index(name = "idx_listing_area_id", columnList = "area_id"),
         @Index(name = "idx_listing_make_id", columnList = "make_id"),
         @Index(name = "idx_listing_vehicle_model_id", columnList = "vehicle_model_id"),
-        @Index(name = "idx_listing_model_year_id", columnList = "model_year_id")
+        @Index(name = "idx_listing_model_year_id", columnList = "model_year_id"),
+        @Index(name = "idx_listings_listing_number", columnList = "listing_number"),
+        @Index(name = "idx_listings_slug", columnList = "slug"),
+        @Index(name = "idx_listings_number_slug", columnList = "listing_number, slug")
 })
 @Getter
 @Setter
@@ -22,6 +25,12 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class Listing extends BaseEntity {
+
+    @Column(name = "listing_number", nullable = false, unique = true, updatable = false)
+    private Integer listingNumber;
+
+    @Column(name = "slug", nullable = false, length = 300)
+    private String slug;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "listing_type", nullable = false)

@@ -3,18 +3,21 @@ package com.ridelist.service;
 import com.ridelist.dto.mapper.UserMapper;
 import com.ridelist.dto.request.ChangePasswordRequest;
 import com.ridelist.dto.request.UpdateProfileRequest;
+import com.ridelist.dto.response.PagedResponse;
+import com.ridelist.dto.response.UserAdminResponse;
 import com.ridelist.dto.response.UserResponse;
 import com.ridelist.exception.BadRequestException;
 import com.ridelist.exception.ResourceNotFoundException;
-import com.ridelist.model.ListingStatus;
-import com.ridelist.model.State;
-import com.ridelist.model.User;
+import com.ridelist.model.*;
 import com.ridelist.repository.FavoriteRepository;
 import com.ridelist.repository.ListingRepository;
 import com.ridelist.repository.StateRepository;
 import com.ridelist.repository.UserRepository;
+import com.ridelist.repository.specification.UserSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -118,5 +121,57 @@ public class UserService {
         log.info("Deleted favorites for user: {}", userId);
 
         log.info("Account deletion completed for user: {}", userId);
+    }
+
+
+    public PagedResponse<UserAdminResponse> getUsers(
+            String search,
+            AccountType accountType,
+            Boolean enabled,
+            LocalDateTime deletedFrom,
+            LocalDateTime deletedTo,
+            Pageable pageable) {
+
+        Page<User> usersPaged = userRepository.findAll(
+                UserSpecification.searchUsers(
+                        search,
+                        accountType,
+                        enabled,
+                        deletedFrom,
+                        deletedTo
+                ),
+                pageable
+        );
+
+        Page<UserAdminResponse> mapped = usersPaged.map(this::mapToResponse);
+
+        return PagedResponse.<UserAdminResponse>builder()
+                .content(mapped.getContent())
+                .page(mapped.getNumber())
+                .size(mapped.getSize())
+                .totalElements(mapped.getTotalElements())
+                .totalPages(mapped.getTotalPages())
+                .first(mapped.isFirst())
+                .last(mapped.isLast())
+                .build();
+
+
+    }
+
+    private UserAdminResponse mapToResponse(User user) {
+        return UserAdminResponse.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .phoneNumber(user.getPhoneNumber())
+                .state(user.getState())
+                .accountType(user.getAccountType())
+                .profileImageUrl(user.getProfileImageUrl())
+                .role(user.getRole())
+                .enabled(user.isEnabled())
+                .deletedAt(user.getDeletedAt())
+                .createdAt(user.getCreatedAt())
+                .build();
     }
 }

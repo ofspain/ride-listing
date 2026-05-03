@@ -8,6 +8,7 @@ import com.ridelist.dto.request.CreateStateRequest;
 import com.ridelist.dto.request.UpdateLocationRequest;
 import com.ridelist.dto.response.AreaResponse;
 import com.ridelist.dto.response.AxisResponse;
+import com.ridelist.dto.response.LocationResolution;
 import com.ridelist.dto.response.StateResponse;
 import com.ridelist.exception.DuplicateResourceException;
 import com.ridelist.exception.ResourceNotFoundException;
@@ -258,5 +259,38 @@ public class LocationService {
         return areaRepository.findByAxisId(axisId).stream()
                 .map(locationMapper::toAreaResponse)
                 .toList();
+    }
+
+    // ==================== SLUG RESOLUTION ====================
+
+    public LocationResolution resolveSlugPath(String stateSlug, String axisSlug, String areaSlug) {
+        log.debug("Resolving slug path - state: {}, axis: {}, area: {}", stateSlug, axisSlug, areaSlug);
+
+        UUID stateId = null;
+        UUID axisId = null;
+        UUID areaId = null;
+
+        if (stateSlug != null && !stateSlug.isBlank()) {
+            State state = stateRepository.findBySlug(stateSlug).orElse(null);
+            if (state != null) {
+                stateId = state.getId();
+            }
+        }
+
+        if (axisSlug != null && !axisSlug.isBlank() && stateSlug != null && !stateSlug.isBlank()) {
+            Axis axis = axisRepository.findBySlugAndStateSlug(axisSlug, stateSlug).orElse(null);
+            if (axis != null) {
+                axisId = axis.getId();
+            }
+        }
+
+        if (areaSlug != null && !areaSlug.isBlank() && axisSlug != null && !axisSlug.isBlank()) {
+            Area area = areaRepository.findBySlugAndAxisSlug(areaSlug, axisSlug).orElse(null);
+            if (area != null) {
+                areaId = area.getId();
+            }
+        }
+
+        return new LocationResolution(stateId, axisId, areaId);
     }
 }

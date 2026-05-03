@@ -49,6 +49,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+
+                if (jwtTokenProvider.isImpersonationToken(jwt)) {
+                    String impersonatedBy = jwtTokenProvider.getImpersonatedBy(jwt);
+                    log.debug("Request processed under impersonation: user={}, impersonatedBy={}",
+                            userId, impersonatedBy);
+                }
             }
         } catch (Exception ex) {
             log.error("Could not set user authentication in security context", ex);

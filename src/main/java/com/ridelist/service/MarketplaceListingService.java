@@ -12,6 +12,7 @@ import com.ridelist.exception.UnauthorizedException;
 import com.ridelist.model.*;
 import com.ridelist.repository.*;
 import com.ridelist.repository.specification.ListingSpecification;
+import com.ridelist.util.SlugUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -62,8 +63,18 @@ public class MarketplaceListingService {
             setCategorizationEntities(listing, request.getMakeId(), request.getVehicleModelId(), request.getModelYearId());
         }
 
+        // Generate slug before first save
+        String slug = SlugUtil.toListingSlug(listing.getTitle());
+        listing.setSlug(slug);
+
         Listing savedListing = listingRepository.save(listing);
-        log.info("Created listing with id: {}", savedListing.getId());
+        UUID savedId = savedListing.getId();
+
+        // Re-fetch to get the database-generated listing_number
+        savedListing = listingRepository.findById(savedId)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing", "id", savedId));
+
+        log.info("Created listing #{} with id: {}", savedListing.getListingNumber(), savedListing.getId());
 
         // Save dynamic attributes
         if (request.getAttributes() != null && !request.getAttributes().isEmpty()) {
@@ -81,6 +92,14 @@ public class MarketplaceListingService {
 
         if (listing.getStatus() == ListingStatus.SOLD || listing.getStatus() == ListingStatus.DELETED) {
             throw new BadRequestException("Cannot update a listing that is sold or deleted");
+        }
+
+        // Regenerate slug if title has changed
+        if (request.getTitle() != null && !request.getTitle().equals(listing.getTitle())) {
+            String oldSlug = listing.getSlug();
+            String newSlug = SlugUtil.toListingSlug(request.getTitle());
+            listing.setSlug(newSlug);
+            log.info("Listing #{} slug updated: {} → {}", listing.getListingNumber(), oldSlug, newSlug);
         }
 
         listingMapper.updateEntityFromRequest(request, listing);
@@ -114,7 +133,7 @@ public class MarketplaceListingService {
         }
 
         Listing updatedListing = listingRepository.save(listing);
-        log.info("Updated listing: {}", listingId);
+        log.info("Updated listing #{} ({})", updatedListing.getListingNumber(), listingId);
 
         return listingMapper.toResponse(updatedListing);
     }
@@ -133,14 +152,14 @@ public class MarketplaceListingService {
 
         listing.setStatus(ListingStatus.ACTIVE);
         Listing publishedListing = listingRepository.save(listing);
-        log.info("Published listing: {}", listingId);
+        log.info("Published listing #{} ({})", publishedListing.getListingNumber(), listingId);
 
         return listingMapper.toResponse(publishedListing);
     }
 
     @Transactional
     public ListingResponse markAsSold(UUID listingId, UUID sellerId) {
-        log.info("Marking listing as sold: {} for seller: {}", listingId, sellerId);
+        log.info("Marking listing #{} as sold for seller: {}", listingId, sellerId);
 
         Listing listing = getListingForOwner(listingId, sellerId);
 
@@ -150,7 +169,7 @@ public class MarketplaceListingService {
 
         listing.setStatus(ListingStatus.SOLD);
         Listing soldListing = listingRepository.save(listing);
-        log.info("Marked listing as sold: {}", listingId);
+        log.info("Marked listing #{} ({}) as sold", soldListing.getListingNumber(), listingId);
 
         return listingMapper.toResponse(soldListing);
     }
@@ -194,6 +213,19 @@ public class MarketplaceListingService {
 
         if (listing.getStatus() == ListingStatus.DELETED) {
             throw new ResourceNotFoundException("Listing", "id", listingId);
+        }
+
+        return listingMapper.toResponse(listing);
+    }
+
+    public ListingResponse getListingByNumber(Integer listingNumber) {
+        log.debug("Fetching listing by number: {}", listingNumber);
+
+        Listing listing = listingRepository.findByListingNumber(listingNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing", "number", listingNumber));
+
+        if (listing.getStatus() == ListingStatus.DELETED) {
+            throw new ResourceNotFoundException("Listing", "number", listingNumber);
         }
 
         return listingMapper.toResponse(listing);
@@ -310,7 +342,7 @@ public class MarketplaceListingService {
     }
 
     private PagedResponse<ListingSummaryResponse> toPagedResponse(Page<Listing> listingsPage) {
-        return PagedResponse.<ListingSummaryResponse>builder()
+        PagedResponse<ListingSummaryResponse> response = PagedResponse.<ListingSummaryResponse>builder()
                 .content(listingsPage.getContent().stream()
                         .map(listingMapper::toSummaryResponse)
                         .toList())
@@ -321,5 +353,9 @@ public class MarketplaceListingService {
                 .first(listingsPage.isFirst())
                 .last(listingsPage.isLast())
                 .build();
+
+       // log.info("Listing response: {}", response);
+
+        return response;
     }
 }

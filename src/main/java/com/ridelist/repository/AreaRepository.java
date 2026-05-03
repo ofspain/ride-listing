@@ -6,6 +6,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,6 +17,9 @@ import java.util.UUID;
 public interface AreaRepository extends JpaRepository<Area, UUID> {
 
     Optional<Area> findBySlug(String slug);
+
+    @Query("SELECT ar FROM Area ar WHERE ar.slug = :slug AND ar.axis.slug = :axisSlug")
+    Optional<Area> findBySlugAndAxisSlug(@Param("slug") String slug, @Param("axisSlug") String axisSlug);
 
     boolean existsBySlug(String slug);
 

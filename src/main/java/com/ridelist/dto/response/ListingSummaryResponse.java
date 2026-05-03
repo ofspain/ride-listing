@@ -35,4 +35,10 @@ public class ListingSummaryResponse {
     private String location;
     private String primaryImageUrl;
     private LocalDateTime createdAt;
+
+    // SEO URL fields
+    private Integer listingNumber;
+    private String slug;
+    private String canonicalUrl;
+    private String categoryPath;
 }

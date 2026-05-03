@@ -92,4 +92,47 @@ public class JwtTokenProvider {
     public long getAccessTokenExpiration() {
         return jwtProperties.getExpiration();
     }
+
+    public static final long IMPERSONATION_TOKEN_EXPIRY = 30 * 60 * 1000L; // 30 minutes
+
+    public String generateImpersonationToken(UUID userId, UUID adminId) {
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + IMPERSONATION_TOKEN_EXPIRY);
+
+        return Jwts.builder()
+                .subject(userId.toString())
+                .claim("impersonatedBy", adminId.toString())
+                .claim("isImpersonation", true)
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public Claims getClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+    }
+
+    public boolean isImpersonationToken(String token) {
+        try {
+            Claims claims = getClaims(token);
+            Boolean isImpersonation = claims.get("isImpersonation", Boolean.class);
+            return Boolean.TRUE.equals(isImpersonation);
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    public String getImpersonatedBy(String token) {
+        try {
+            Claims claims = getClaims(token);
+            return claims.get("impersonatedBy", String.class);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
 }
