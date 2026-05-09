@@ -210,16 +210,25 @@ public final class SlugUtil {
 
     /**
      * Resolution result for category path lookup.
+     * When both listingType and vehicleType are null, this represents "all" categories.
      */
     public record CategoryResolution(
             ListingType listingType,
             VehicleType vehicleType
-    ) {}
+    ) {
+        /**
+         * Returns true if this resolution represents "all" categories (no type filters).
+         */
+        public boolean isAll() {
+            return listingType == null && vehicleType == null;
+        }
+    }
 
     /**
      * Resolves a category path slug to listing type and vehicle type.
+     * The special "all" category returns null for both types, indicating no type filtering.
      *
-     * @param categoryPath the category path (e.g., "motorcycles", "spare-parts")
+     * @param categoryPath the category path (e.g., "motorcycles", "spare-parts", "all")
      * @return CategoryResolution with listingType and vehicleType, or null if invalid
      */
     public static CategoryResolution resolveCategoryPath(String categoryPath) {
@@ -227,6 +236,7 @@ public final class SlugUtil {
             return null;
         }
         return switch (categoryPath.toLowerCase()) {
+            case "all" -> new CategoryResolution(null, null);
             case "motorcycles" -> new CategoryResolution(ListingType.VEHICLE, VehicleType.MOTORCYCLE);
             case "tricycles" -> new CategoryResolution(ListingType.VEHICLE, VehicleType.TRICYCLE);
             case "bicycles" -> new CategoryResolution(ListingType.VEHICLE, VehicleType.BICYCLE);
@@ -234,5 +244,85 @@ public final class SlugUtil {
             case "spare-parts", "parts", "accessories" -> new CategoryResolution(ListingType.PART, null);
             default -> null;
         };
+    }
+
+    /**
+     * Checks if the given category path represents the "all" pseudo-category.
+     *
+     * @param categoryPath the category path to check
+     * @return true if categoryPath is "all" (case-insensitive)
+     */
+    public static boolean isAllCategory(String categoryPath) {
+        return categoryPath != null && "all".equalsIgnoreCase(categoryPath);
+    }
+
+    /**
+     * Generates a seller profile slug.
+     * <p>
+     * Format: {name-slug}-{location-slug?}-{first-6-uuid-chars}
+     * <p>
+     * Examples:
+     * "Chukwuemeka Autos" + "Lagos" + UUID → chukwuemeka-autos-lagos-f630be
+     * "Tunde Motors" + no location + UUID → tunde-motors-9k2m1p
+     *
+     * @param firstName the seller's first name
+     * @param lastName the seller's last name
+     * @param stateSlug the state slug (nullable)
+     * @param userId the user's UUID
+     * @return seller profile slug
+     */
+    public static String toSellerSlug(
+            String firstName,
+            String lastName,
+            String stateSlug,
+            java.util.UUID userId
+    ) {
+        String namePart = toSlug(firstName + " " + lastName);
+
+        // UUID fragment — first 6 chars (without hyphens)
+        String uuidFragment = userId
+                .toString()
+                .replace("-", "")
+                .substring(0, 6);
+
+        if (stateSlug != null && !stateSlug.isBlank()) {
+            return namePart + "-" + stateSlug + "-" + uuidFragment;
+        }
+
+        return namePart + "-" + uuidFragment;
+    }
+
+    /**
+     * Extracts UUID fragment from a seller slug for resolution.
+     * <p>
+     * Input:  "chukwuemeka-autos-lagos-f630be"
+     * Output: "f630be"
+     * <p>
+     * The last hyphen-separated segment of exactly 6 chars is the UUID fragment.
+     *
+     * @param sellerSlug the seller slug
+     * @return the UUID fragment, or null if invalid
+     */
+    public static String extractSellerUuidFragment(String sellerSlug) {
+        if (sellerSlug == null || sellerSlug.isBlank()) {
+            return null;
+        }
+        String[] parts = sellerSlug.split("-");
+        String last = parts[parts.length - 1];
+        // UUID fragment is exactly 6 alphanumeric chars
+        if (last.matches("[a-f0-9]{6}")) {
+            return last;
+        }
+        return null;
+    }
+
+    /**
+     * Builds the canonical seller URL path.
+     *
+     * @param sellerSlug the seller slug
+     * @return URL path like "/sellers/{seller-slug}"
+     */
+    public static String toSellerUrl(String sellerSlug) {
+        return "/sellers/" + sellerSlug;
     }
 }

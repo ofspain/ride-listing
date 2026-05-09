@@ -44,4 +44,16 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     long countByCreatedAtAfter(@Param("since") LocalDateTime since);
 
     List<User> findTop10ByOrderByCreatedAtDesc();
+
+    /**
+     * Find by UUID fragment (last 6 chars of UUID without hyphens).
+     * Used for seller slug resolution.
+     */
+    @Query("SELECT u FROM User u WHERE REPLACE(CAST(u.id AS string), '-', '') LIKE CONCAT(:fragment, '%')")
+    Optional<User> findBySellerSlugFragment(@Param("fragment") String fragment);
+
+    /**
+     * Find DEALER users for sitemap generation.
+     */
+    List<User> findByAccountTypeAndSellerSlugIsNotNull(AccountType accountType);
 }

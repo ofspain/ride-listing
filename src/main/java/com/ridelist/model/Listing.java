@@ -36,7 +36,7 @@ public class Listing extends BaseEntity {
     @Column(name = "listing_type", nullable = false)
     private ListingType listingType;
 
-    @Column(nullable = false)
+    @Column(name = "title", nullable = false, length = 150)
     private String title;
 
     @Column(columnDefinition = "TEXT")

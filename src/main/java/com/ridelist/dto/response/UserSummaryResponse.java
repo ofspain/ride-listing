@@ -17,4 +17,6 @@ public class UserSummaryResponse {
     private String firstName;
     private String lastName;
     private String profileImageUrl;
+    private String sellerSlug;
+    private String sellerUrl;
 }

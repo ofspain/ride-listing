@@ -9,7 +9,12 @@ import com.ridelist.model.ListingImage;
 import com.ridelist.util.SlugUtil;
 import org.mapstruct.*;
 
-@Mapper(componentModel = "spring", uses = {UserMapper.class, ListingImageMapper.class, LocationMapper.class, CategorizationMapper.class, AttributeMapper.class})
+//@Mapping(
+//    target = "fullName",
+//    expression = "java(user.getFirstName() + \" \" + user.getLastName())"
+//)
+
+@Mapper(componentModel = "spring", builder = @Builder(disableBuilder = true), uses = {UserMapper.class, ListingImageMapper.class, LocationMapper.class, CategorizationMapper.class, AttributeMapper.class})
 public interface ListingMapper {
 
     @Mapping(target = "status", ignore = true)

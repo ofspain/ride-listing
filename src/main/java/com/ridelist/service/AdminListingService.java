@@ -29,6 +29,7 @@ public class AdminListingService {
 
     private final ListingRepository listingRepository;
     private final ListingMapper listingMapper;
+    private final LocationHubService locationHubService;
 
     private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS = Map.of(
             ListingStatus.DRAFT, Set.of(ListingStatus.PUBLISHED, ListingStatus.ACTIVE, ListingStatus.DELETED),
@@ -80,6 +81,8 @@ public class AdminListingService {
 
         log.info("Admin {} changed listing {} status from {} to {}", adminId, listingId, currentStatus, newStatus);
 
+        locationHubService.evictLocationHubCache();
+
         return listingMapper.toResponse(updatedListing);
     }
 
@@ -94,6 +97,8 @@ public class AdminListingService {
         listingRepository.save(listing);
 
         log.info("Admin {} deleted listing {}", adminId, listingId);
+
+        locationHubService.evictLocationHubCache();
     }
 
     private boolean isValidTransition(ListingStatus from, ListingStatus to) {

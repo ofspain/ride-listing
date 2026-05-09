@@ -20,7 +20,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class UpdateListingRequest {
 
-    @Size(max = 200, message = "Title must not exceed 200 characters")
+    @Size(min = 45, max = 150, message = "Title must be between 45 and 150 characters.")
     private String title;
 
     @Size(max = 5000, message = "Description must not exceed 5000 characters")

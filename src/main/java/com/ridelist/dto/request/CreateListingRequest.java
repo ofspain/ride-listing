@@ -27,7 +27,7 @@ public class CreateListingRequest {
     private ListingType listingType;
 
     @NotBlank(message = "Title is required")
-    @Size(max = 200, message = "Title must not exceed 200 characters")
+    @Size(min = 45, max = 150, message = "Title must be between 45 and 150 characters. Include make, model, year, condition and location for best results.")
     private String title;
 
     @Size(max = 5000, message = "Description must not exceed 5000 characters")

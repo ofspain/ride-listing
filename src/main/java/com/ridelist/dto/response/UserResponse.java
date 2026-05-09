@@ -26,4 +26,8 @@ public class UserResponse {
     private Role role;
     private String state;
     private LocalDateTime createdAt;
+    private String bio;
+    private String sellerSlug;
+    private String sellerUrl;
+    private boolean hasPublicPage;
 }

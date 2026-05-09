@@ -18,6 +18,8 @@ public interface AreaRepository extends JpaRepository<Area, UUID> {
 
     Optional<Area> findBySlug(String slug);
 
+    List<Area> findBySlugIn(List<String> slugs);
+
     @Query("SELECT ar FROM Area ar WHERE ar.slug = :slug AND ar.axis.slug = :axisSlug")
     Optional<Area> findBySlugAndAxisSlug(@Param("slug") String slug, @Param("axisSlug") String axisSlug);
 

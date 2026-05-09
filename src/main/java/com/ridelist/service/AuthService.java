@@ -36,6 +36,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final EmailSenderFactory emailSenderFactory;
     private final EmailTemplateService emailTemplateService;
+    private final SellerProfileService sellerProfileService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -55,6 +56,11 @@ public class AuthService {
 
         User savedUser = userRepository.save(user);
         log.info("User registered successfully with id: {}", savedUser.getId());
+
+        // Generate seller slug for DEALER accounts
+        if (savedUser.getAccountType() == AccountType.DEALER) {
+            sellerProfileService.generateSellerSlug(savedUser);
+        }
 
         sendWelcomeEmailAsync(savedUser);
 

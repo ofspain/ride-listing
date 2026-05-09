@@ -38,6 +38,7 @@ public class UserService {
     private final FavoriteRepository favoriteRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final SellerProfileService sellerProfileService;
 
     public UserResponse getProfile(UUID userId) {
         log.info("Fetching profile for user: {}", userId);
@@ -55,22 +56,42 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
 
+        boolean slugFieldsChanged = false;
+
         if (request.getFirstName() != null && !request.getFirstName().isBlank()) {
+            if (!request.getFirstName().trim().equals(user.getFirstName())) {
+                slugFieldsChanged = true;
+            }
             user.setFirstName(request.getFirstName().trim());
         }
 
         if (request.getLastName() != null && !request.getLastName().isBlank()) {
+            if (!request.getLastName().trim().equals(user.getLastName())) {
+                slugFieldsChanged = true;
+            }
             user.setLastName(request.getLastName().trim());
         }
 
         if (request.getStateId() != null) {
             State state = stateRepository.findById(request.getStateId())
                     .orElseThrow(() -> new ResourceNotFoundException("State", "id", request.getStateId()));
+            if (!state.getName().equals(user.getState())) {
+                slugFieldsChanged = true;
+            }
             user.setState(state.getName());
+        }
+
+        if (request.getBio() != null) {
+            user.setBio(request.getBio().trim());
         }
 
         User savedUser = userRepository.save(user);
         log.info("Profile updated for user: {}", userId);
+
+        // Regenerate seller slug if name or state changed for DEALER
+        if (slugFieldsChanged && savedUser.getAccountType() == AccountType.DEALER) {
+            sellerProfileService.generateSellerSlug(savedUser);
+        }
 
         return userMapper.toResponse(savedUser);
     }

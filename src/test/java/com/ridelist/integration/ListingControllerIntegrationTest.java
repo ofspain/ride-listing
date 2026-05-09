@@ -32,7 +32,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             State state = createTestState("Lagos");
 
             CreateListingRequest request = CreateListingRequest.builder()
-                    .title("Honda CBR 650R")
+                    .title("Honda CBR 650R Sports Motorcycle 2024 Lagos Excellent")
                     .description("Well maintained sports bike")
                     .price(BigDecimal.valueOf(2500000))
                     .listingType(ListingType.VEHICLE)
@@ -51,7 +51,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
                     .andExpect(jsonPath("$.data.status").value("DRAFT"))
                     .andExpect(jsonPath("$.data.listingType").value("VEHICLE"))
                     .andExpect(jsonPath("$.data.vehicleType").value("MOTORCYCLE"))
-                    .andExpect(jsonPath("$.data.title").value("Honda CBR 650R"));
+                    .andExpect(jsonPath("$.data.title").value("Honda CBR 650R Sports Motorcycle 2024 Lagos Excellent"));
         }
 
         @Test
@@ -61,7 +61,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             State state = createTestState("Lagos");
 
             CreateListingRequest request = CreateListingRequest.builder()
-                    .title("Motorcycle Chain Set")
+                    .title("Heavy Duty Motorcycle Chain Set 520 Pitch Gold 120 Links")
                     .description("Heavy duty chain set for motorcycles")
                     .price(BigDecimal.valueOf(15000))
                     .listingType(ListingType.PART)
@@ -89,7 +89,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             State state = createTestState("Lagos");
 
             CreateListingRequest request = CreateListingRequest.builder()
-                    .title("Some Vehicle")
+                    .title("Some Vehicle Motorcycle Listing Title For Test Cases")
                     .description("Description")
                     .price(BigDecimal.valueOf(100000))
                     .listingType(ListingType.VEHICLE)
@@ -113,7 +113,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             State state = createTestState("Lagos");
 
             CreateListingRequest request = CreateListingRequest.builder()
-                    .title("Some Part")
+                    .title("Some Spare Part Accessory Listing Title For Test Cases")
                     .description("Description")
                     .price(BigDecimal.valueOf(5000))
                     .listingType(ListingType.PART)
@@ -136,7 +136,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             State state = createTestState("Lagos");
 
             CreateListingRequest request = CreateListingRequest.builder()
-                    .title("Honda CBR 650R")
+                    .title("Honda CBR 650R Sports Motorcycle 2024 Lagos Excellent")
                     .price(BigDecimal.valueOf(2500000))
                     .listingType(ListingType.VEHICLE)
                     .vehicleType(VehicleType.MOTORCYCLE)
@@ -166,7 +166,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             Listing listing = createTestListing(seller, ListingType.VEHICLE);
 
             UpdateListingRequest request = UpdateListingRequest.builder()
-                    .title("Updated Title")
+                    .title("Updated Title For Vehicle Listing With Proper Length")
                     .price(BigDecimal.valueOf(200000))
                     .build();
 
@@ -176,7 +176,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.data.title").value("Updated Title"))
+                    .andExpect(jsonPath("$.data.title").value("Updated Title For Vehicle Listing With Proper Length"))
                     .andExpect(jsonPath("$.data.price").value(200000));
         }
 
@@ -191,7 +191,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             String seller2Token = registerAndGetToken("seller2@test.com", "Password123!");
 
             UpdateListingRequest request = UpdateListingRequest.builder()
-                    .title("Hijacked Title")
+                    .title("Hijacked Title For Unauthorized Access Test Case Here")
                     .build();
 
             // Note: Service returns 401 Unauthorized when non-owner tries to modify listing
@@ -208,7 +208,7 @@ public class ListingControllerIntegrationTest extends BaseIntegrationTest {
             String token = registerAndGetToken("seller@test.com", "Password123!");
 
             UpdateListingRequest request = UpdateListingRequest.builder()
-                    .title("Some Title")
+                    .title("Some Title That Is Long Enough For Validation Test")
                     .build();
 
             mockMvc.perform(put("/api/v1/account/listings/" + UUID.randomUUID())

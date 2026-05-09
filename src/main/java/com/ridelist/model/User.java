@@ -55,6 +55,15 @@ public class User extends BaseEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Column(name = "bio", columnDefinition = "TEXT")
+    private String bio;
+
+    @Column(name = "seller_slug", length = 200)
+    private String sellerSlug;
+
+    @Column(name = "seller_slug_updated_at")
+    private LocalDateTime sellerSlugUpdatedAt;
+
     @OneToMany(mappedBy = "seller", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Listing> listings = new ArrayList<>();

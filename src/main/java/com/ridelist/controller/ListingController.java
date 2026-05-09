@@ -10,6 +10,7 @@ import com.ridelist.security.UserPrincipal;
 import com.ridelist.model.Listing;
 import com.ridelist.repository.ListingRepository;
 import com.ridelist.service.ImageService;
+import com.ridelist.service.LocationHubService;
 import com.ridelist.service.LocationService;
 import com.ridelist.service.MarketplaceListingService;
 import com.ridelist.util.CurrentUser;
@@ -29,6 +30,7 @@ import org.springframework.web.multipart.MultipartFile;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +43,7 @@ public class ListingController {
     private final MarketplaceListingService listingService;
     private final ImageService imageService;
     private final LocationService locationService;
+    private final LocationHubService locationHubService;
     private final ListingRepository listingRepository;
 
     // ==================== PUBLIC ENDPOINTS ====================
@@ -56,24 +59,27 @@ public class ListingController {
             @RequestParam(required = false) UUID areaId,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(name = "location", required = false) List<String> locationSlugs,
+            @RequestParam(name = "q", required = false) String searchQuery,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             HttpServletRequest request) {
 
-        // Extract attribute filters from query params (e.g., attr_engine-type=150cc)
-        Map<String, String> attributeFilters = extractAttributeFilters(request);
+        // Extract attribute filters from query params (e.g., attr_engine-type=150cc&attr_engine-type=200cc)
+        Map<String, List<String>> attributeFilters = extractAttributeFilters(request);
 
         PagedResponse<ListingSummaryResponse> response = listingService.getListings(
-                listingType, vehicleType, stateId, axisId, areaId, minPrice, maxPrice, attributeFilters, pageable);
+                listingType, vehicleType, stateId, axisId, areaId, minPrice, maxPrice,
+                locationSlugs, attributeFilters, searchQuery, pageable);
 
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
-    private Map<String, String> extractAttributeFilters(HttpServletRequest request) {
-        Map<String, String> attributeFilters = new HashMap<>();
+    private Map<String, List<String>> extractAttributeFilters(HttpServletRequest request) {
+        Map<String, List<String>> attributeFilters = new HashMap<>();
         request.getParameterMap().forEach((key, values) -> {
             if (key.startsWith(ATTRIBUTE_FILTER_PREFIX) && values.length > 0) {
                 String attributeSlug = key.substring(ATTRIBUTE_FILTER_PREFIX.length());
-                attributeFilters.put(attributeSlug, values[0]);
+                attributeFilters.put(attributeSlug, Arrays.asList(values));
             }
         });
         return attributeFilters;
@@ -99,6 +105,8 @@ public class ListingController {
             @RequestParam(required = false) String areaSlug,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(name = "location", required = false) List<String> locationSlugs,
+            @RequestParam(name = "q", required = false) String searchQuery,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             HttpServletRequest request) {
 
@@ -110,7 +118,7 @@ public class ListingController {
 
         LocationResolution location = locationService.resolveSlugPath(stateSlug, axisSlug, areaSlug);
 
-        Map<String, String> attributeFilters = extractAttributeFilters(request);
+        Map<String, List<String>> attributeFilters = extractAttributeFilters(request);
 
         PagedResponse<ListingSummaryResponse> response = listingService.getListings(
                 category.listingType(),
@@ -120,7 +128,67 @@ public class ListingController {
                 location.areaId(),
                 minPrice,
                 maxPrice,
+                locationSlugs,
                 attributeFilters,
+                searchQuery,
+                pageable
+        );
+
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    /**
+     * SEO-friendly browse endpoint with location path segments.
+     * URL pattern: /browse/{category}/{state}/{axis?}/{area?}
+     *
+     * Examples:
+     * - /browse/motorcycles/lagos
+     * - /browse/motorcycles/lagos/ikeja
+     * - /browse/motorcycles/lagos/ikeja/opebi
+     * - /browse/all/lagos (all categories in Lagos)
+     * - /browse/all/lagos/ikeja (all categories in Ikeja, Lagos)
+     *
+     * The locationPath is parsed as: state-slug/axis-slug/area-slug
+     * When categoryPath is "all", no listingType or vehicleType filter is applied.
+     */
+    @GetMapping("/api/v1/listings/browse/{categoryPath}/{locationPath:.*}")
+    public ResponseEntity<ApiResponse<PagedResponse<ListingSummaryResponse>>> browseListingsWithLocationPath(
+            @PathVariable String categoryPath,
+            @PathVariable String locationPath,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(name = "location", required = false) List<String> locationSlugs,
+            @RequestParam(name = "q", required = false) String searchQuery,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            HttpServletRequest request) {
+
+        SlugUtil.CategoryResolution category = SlugUtil.resolveCategoryPath(categoryPath);
+
+        if (category == null) {
+            throw new ResourceNotFoundException("Category", "path", categoryPath);
+        }
+
+        // Parse locationPath: "lagos" or "lagos/ikeja" or "lagos/ikeja/opebi"
+        String[] locationSegments = locationPath.split("/");
+        String stateSlug = locationSegments.length > 0 ? locationSegments[0] : null;
+        String axisSlug = locationSegments.length > 1 ? locationSegments[1] : null;
+        String areaSlug = locationSegments.length > 2 ? locationSegments[2] : null;
+
+        LocationResolution location = locationService.resolveSlugPath(stateSlug, axisSlug, areaSlug);
+
+        Map<String, List<String>> attributeFilters = extractAttributeFilters(request);
+
+        PagedResponse<ListingSummaryResponse> response = listingService.getListings(
+                category.listingType(),
+                category.vehicleType(),
+                location.stateId(),
+                location.axisId(),
+                location.areaId(),
+                minPrice,
+                maxPrice,
+                locationSlugs,
+                attributeFilters,
+                searchQuery,
                 pageable
         );
 
@@ -144,18 +212,36 @@ public class ListingController {
         String categoryLabel = buildCategoryLabel(category);
 
         String title = categoryLabel + " for Sale in " + locationLabel;
+        String description = buildDescription(categoryLabel, locationLabel, category);
 
-        String description = "Browse " + categoryLabel.toLowerCase() + " for sale" +
-                (locationLabel.equals("Nigeria") ? " in Nigeria" : " in " + locationLabel) +
-                " on RideList. Verified sellers, best prices, buy with confidence.";
-
-        String canonicalUrl = "/" + categoryPath +
-                (stateSlug != null && !stateSlug.isBlank() ? "/" + stateSlug : "") +
-                (axisSlug != null && !axisSlug.isBlank() ? "/" + axisSlug : "") +
-                (areaSlug != null && !areaSlug.isBlank() ? "/" + areaSlug : "");
+        // For "all" category, omit "all" from canonical URL for cleaner SEO
+        String canonicalUrl = buildCanonicalUrl(categoryPath, category.isAll(), stateSlug, axisSlug, areaSlug);
 
         BrowsePageMeta meta = new BrowsePageMeta(title, description, canonicalUrl, locationLabel, categoryLabel);
         return ResponseEntity.ok(ApiResponse.success(meta));
+    }
+
+    @GetMapping("/api/v1/listings/browse/{categoryPath}/locations")
+    public ResponseEntity<ApiResponse<LocationHubResponse>> getLocationHub(
+            @PathVariable String categoryPath,
+            @RequestParam(required = false) String stateSlug,
+            @RequestParam(required = false) String axisSlug) {
+
+        SlugUtil.CategoryResolution category = SlugUtil.resolveCategoryPath(categoryPath);
+
+        if (category == null) {
+            throw new ResourceNotFoundException("Category", "path", categoryPath);
+        }
+
+        LocationHubResponse response = locationHubService.getLocationHub(
+                categoryPath,
+                category.listingType(),
+                category.vehicleType(),
+                stateSlug,
+                axisSlug
+        );
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @GetMapping("/api/v1/listings/{idOrRef}")
@@ -192,6 +278,9 @@ public class ListingController {
     }
 
     private String buildCategoryLabel(SlugUtil.CategoryResolution category) {
+        if (category.isAll()) {
+            return "All Listings";
+        }
         if (category.listingType() == ListingType.PART) {
             return "Spare Parts & Accessories";
         }
@@ -203,6 +292,65 @@ public class ListingController {
             case TRICYCLE -> "Tricycles";
             case BICYCLE -> "Bicycles";
         };
+    }
+
+    private String buildDescription(String categoryLabel, String locationLabel, SlugUtil.CategoryResolution category) {
+        StringBuilder desc = new StringBuilder();
+
+        if (category.isAll()) {
+            desc.append("Browse motorcycles, tricycles, bicycles, and spare parts for sale");
+        } else {
+            desc.append("Browse ").append(categoryLabel.toLowerCase());
+
+            if (category.vehicleType() == VehicleType.MOTORCYCLE) {
+                desc.append(" (okada bikes)");
+            } else if (category.vehicleType() == VehicleType.TRICYCLE) {
+                desc.append(" (keke napep)");
+            } else if (category.listingType() == ListingType.PART) {
+                desc.append(" and accessories");
+            }
+
+            desc.append(" for sale");
+        }
+
+        if (!locationLabel.equals("Nigeria")) {
+            desc.append(" in ").append(locationLabel);
+        } else {
+            desc.append(" in Nigeria");
+        }
+
+        desc.append(" on RideList. ");
+        desc.append("New and tokunbo (fairly used) options from verified dealers.");
+
+        return desc.toString();
+    }
+
+    private String buildCanonicalUrl(String categoryPath, boolean isAllCategory, String stateSlug, String axisSlug, String areaSlug) {
+        StringBuilder url = new StringBuilder();
+
+        // For "all" category, omit the category from URL for cleaner SEO (e.g., /lagos instead of /all/lagos)
+        if (!isAllCategory) {
+            url.append("/").append(categoryPath);
+        }
+
+        if (stateSlug != null && !stateSlug.isBlank()) {
+            url.append("/").append(stateSlug);
+
+            if (axisSlug != null && !axisSlug.isBlank()) {
+                url.append("/").append(axisSlug);
+
+                if (areaSlug != null && !areaSlug.isBlank()) {
+                    url.append("/").append(areaSlug);
+                }
+            }
+        }
+
+        // Handle root "all" case - return "/" or just the location path
+        if (url.isEmpty()) {
+            return "/";
+        }
+
+        return url.toString();
     }
 
     @GetMapping("/api/v1/listings/sitemap-data")

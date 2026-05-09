@@ -21,4 +21,7 @@ public class UpdateProfileRequest {
     private String lastName;
 
     private UUID stateId;
+
+    @Size(max = 500, message = "Bio cannot exceed 500 characters")
+    private String bio;
 }

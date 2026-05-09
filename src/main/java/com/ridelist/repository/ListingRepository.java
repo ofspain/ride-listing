@@ -74,6 +74,8 @@ public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpec
 
     long countBySellerId(UUID sellerId);
 
+    long countBySellerIdAndStatusIn(UUID sellerId, List<ListingStatus> statuses);
+
     List<Listing> findTop10ByStatusOrderByCreatedAtDesc(ListingStatus status);
 
     @Modifying
@@ -134,4 +136,50 @@ public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpec
     @Query("SELECT l FROM Listing l LEFT JOIN FETCH l.state LEFT JOIN FETCH l.axis LEFT JOIN FETCH l.area " +
            "WHERE l.status IN ('ACTIVE', 'PUBLISHED') ORDER BY l.createdAt DESC")
     List<Listing> findRecentActiveForSitemap(Pageable pageable);
+
+    @Query("SELECT new com.ridelist.dto.response.LocationCount(" +
+           "l.state.name, l.state.slug, COUNT(l)) " +
+           "FROM Listing l " +
+           "WHERE l.listingType = :listingType " +
+           "AND (:vehicleType IS NULL OR l.vehicleType = :vehicleType) " +
+           "AND l.status IN (com.ridelist.model.ListingStatus.ACTIVE, com.ridelist.model.ListingStatus.PUBLISHED) " +
+           "AND l.state IS NOT NULL " +
+           "GROUP BY l.state.id, l.state.name, l.state.slug " +
+           "ORDER BY COUNT(l) DESC")
+    List<com.ridelist.dto.response.LocationCount> countActiveListingsByCategory(
+            @Param("listingType") ListingType listingType,
+            @Param("vehicleType") VehicleType vehicleType
+    );
+
+    @Query("SELECT new com.ridelist.dto.response.LocationCount(" +
+           "l.axis.name, l.axis.slug, COUNT(l)) " +
+           "FROM Listing l " +
+           "WHERE l.state.id = :stateId " +
+           "AND l.listingType = :listingType " +
+           "AND (:vehicleType IS NULL OR l.vehicleType = :vehicleType) " +
+           "AND l.status IN (com.ridelist.model.ListingStatus.ACTIVE, com.ridelist.model.ListingStatus.PUBLISHED) " +
+           "AND l.axis IS NOT NULL " +
+           "GROUP BY l.axis.id, l.axis.name, l.axis.slug " +
+           "ORDER BY COUNT(l) DESC")
+    List<com.ridelist.dto.response.LocationCount> countActiveListingsByStateAndCategory(
+            @Param("stateId") UUID stateId,
+            @Param("listingType") ListingType listingType,
+            @Param("vehicleType") VehicleType vehicleType
+    );
+
+    @Query("SELECT new com.ridelist.dto.response.LocationCount(" +
+           "l.area.name, l.area.slug, COUNT(l)) " +
+           "FROM Listing l " +
+           "WHERE l.axis.id = :axisId " +
+           "AND l.listingType = :listingType " +
+           "AND (:vehicleType IS NULL OR l.vehicleType = :vehicleType) " +
+           "AND l.status IN (com.ridelist.model.ListingStatus.ACTIVE, com.ridelist.model.ListingStatus.PUBLISHED) " +
+           "AND l.area IS NOT NULL " +
+           "GROUP BY l.area.id, l.area.name, l.area.slug " +
+           "ORDER BY COUNT(l) DESC")
+    List<com.ridelist.dto.response.LocationCount> countActiveListingsByAxisAndCategory(
+            @Param("axisId") UUID axisId,
+            @Param("listingType") ListingType listingType,
+            @Param("vehicleType") VehicleType vehicleType
+    );
 }

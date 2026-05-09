@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -41,6 +42,7 @@ public class MarketplaceListingService {
     private final ModelYearRepository modelYearRepository;
     private final ListingMapper listingMapper;
     private final ListingAttributeService listingAttributeService;
+    private final LocationHubService locationHubService;
 
     @Transactional
     public ListingResponse createListing(CreateListingRequest request, UUID sellerId) {
@@ -154,6 +156,8 @@ public class MarketplaceListingService {
         Listing publishedListing = listingRepository.save(listing);
         log.info("Published listing #{} ({})", publishedListing.getListingNumber(), listingId);
 
+        locationHubService.evictLocationHubCache();
+
         return listingMapper.toResponse(publishedListing);
     }
 
@@ -171,6 +175,8 @@ public class MarketplaceListingService {
         Listing soldListing = listingRepository.save(listing);
         log.info("Marked listing #{} ({}) as sold", soldListing.getListingNumber(), listingId);
 
+        locationHubService.evictLocationHubCache();
+
         return listingMapper.toResponse(soldListing);
     }
 
@@ -182,11 +188,13 @@ public class MarketplaceListingService {
             UUID areaId,
             BigDecimal minPrice,
             BigDecimal maxPrice,
-            Map<String, String> attributeFilters,
+            List<String> locationSlugs,
+            Map<String, List<String>> attributeFilters,
+            String searchQuery,
             Pageable pageable) {
 
-        log.debug("Fetching listings with filters - listingType: {}, vehicleType: {}, stateId: {}, axisId: {}, areaId: {}, priceRange: {}-{}, attributeFilters: {}",
-                listingType, vehicleType, stateId, axisId, areaId, minPrice, maxPrice, attributeFilters);
+        log.debug("Fetching listings with filters - listingType: {}, vehicleType: {}, stateId: {}, axisId: {}, areaId: {}, priceRange: {}-{}, locationSlugs: {}, attributeFilters: {}, q: {}",
+                listingType, vehicleType, stateId, axisId, areaId, minPrice, maxPrice, locationSlugs, attributeFilters, searchQuery);
 
         Specification<Listing> spec = ListingSpecification.withFilters(
                 ListingStatus.ACTIVE,
@@ -197,7 +205,9 @@ public class MarketplaceListingService {
                 areaId,
                 minPrice,
                 maxPrice,
-                attributeFilters
+                locationSlugs,
+                attributeFilters,
+                searchQuery
         );
 
         Page<Listing> listingsPage = listingRepository.findAll(spec, pageable);

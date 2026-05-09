@@ -18,6 +18,8 @@ public interface AxisRepository extends JpaRepository<Axis, UUID> {
 
     Optional<Axis> findBySlug(String slug);
 
+    List<Axis> findBySlugIn(List<String> slugs);
+
     @Query("SELECT ax FROM Axis ax WHERE ax.slug = :slug AND ax.state.slug = :stateSlug")
     Optional<Axis> findBySlugAndStateSlug(@Param("slug") String slug, @Param("stateSlug") String stateSlug);
 

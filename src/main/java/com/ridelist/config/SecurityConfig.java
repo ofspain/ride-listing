@@ -49,6 +49,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/attributes/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/lookup/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/marketplace/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/sellers/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/seller/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/inquire").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/account/**").authenticated()
