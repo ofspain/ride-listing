@@ -2,6 +2,7 @@ package com.ridelist.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ridelist.model.AccountType;
+import com.ridelist.model.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -34,4 +35,7 @@ public class RegisterRequest {
 
     @JsonProperty("accountType")
     private AccountType accountType;
+
+    @JsonProperty("accountType")
+    private Role role;
 }

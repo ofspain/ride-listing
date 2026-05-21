@@ -13,6 +13,7 @@ import com.ridelist.exception.BadRequestException;
 import com.ridelist.exception.DuplicateResourceException;
 import com.ridelist.exception.UnauthorizedException;
 import com.ridelist.model.AccountType;
+import com.ridelist.model.Role;
 import com.ridelist.model.User;
 import com.ridelist.repository.UserRepository;
 import com.ridelist.security.JwtTokenProvider;
@@ -53,6 +54,11 @@ public class AuthService {
                 ? request.getAccountType()
                 : AccountType.INDIVIDUAL;
         user.setAccountType(type);
+
+        Role role = request.getRole() != null
+                ? request.getRole() : Role.USER;
+
+        user.setRole(role);
 
         User savedUser = userRepository.save(user);
         log.info("User registered successfully with id: {}", savedUser.getId());
