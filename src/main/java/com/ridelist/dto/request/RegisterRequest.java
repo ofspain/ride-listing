@@ -36,6 +36,5 @@ public class RegisterRequest {
     @JsonProperty("accountType")
     private AccountType accountType;
 
-    @JsonProperty("accountType")
     private Role role;
 }
