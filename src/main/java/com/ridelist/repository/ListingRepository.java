@@ -182,4 +182,7 @@ public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpec
             @Param("listingType") ListingType listingType,
             @Param("vehicleType") VehicleType vehicleType
     );
+
+    @Query(value = "SELECT nextval('listing_number_seq')", nativeQuery = true)
+    Long getNextListingNumber();
 }

@@ -69,6 +69,11 @@ public class MarketplaceListingService {
         String slug = SlugUtil.toListingSlug(listing.getTitle());
         listing.setSlug(slug);
 
+        // Generate unique listing number before saving
+
+        Long nextListingNumber = listingRepository.getNextListingNumber();
+        listing.setListingNumber(nextListingNumber.intValue());
+
         Listing savedListing = listingRepository.save(listing);
         UUID savedId = savedListing.getId();
 
